@@ -1,0 +1,11 @@
+Django==6.0.3
+djangorestframework
+djangorestframework-simplejwt
+django-cors-headers
+psycopg2-binary
+python-dotenv
+Pillow
+qrcode[pil]
+gunicorn==22.0.0
+dj-database-url==2.1.0
+
