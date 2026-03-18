@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import api from '../utils/api';
+import { db } from '../lib/firebase';
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  orderBy,
+} from 'firebase/firestore';
 import { Calendar, Clock, Monitor, Download, ChevronRight, History, Hash } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
@@ -16,8 +23,43 @@ const PreviousBookings = () => {
 
     const fetchBookings = async () => {
         try {
-            const res = await api.get('bookings/my-bookings/');
-            setBookings(res.data.reverse()); // Show latest first
+            const q = query(
+                collection(db, 'bookings'),
+                where('customer_id', '==', customer.id)
+            );
+            const snap = await getDocs(q);
+            const rawBookings = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            // Fetch slot info for each booking
+            const slotsSnap = await getDocs(collection(db, 'slots'));
+            const slotsMap = {};
+            slotsSnap.docs.forEach(d => { slotsMap[d.id] = d.data(); });
+
+            // Fetch payments
+            const paymentsSnap = await getDocs(collection(db, 'payments'));
+            const paymentsMap = {};
+            paymentsSnap.docs.forEach(d => {
+                const p = d.data();
+                paymentsMap[p.booking_id] = p.status;
+            });
+
+            const mapped = rawBookings.map(b => {
+                const slot = slotsMap[b.slot_id] || {};
+                return {
+                    booking_id: b.id,
+                    date: b.booking_date,
+                    guest_count: b.guest_count,
+                    price: b.price,
+                    payment_status: paymentsMap[b.id] || 'pending',
+                    checkin_status: b.status || 'upcoming',
+                    customer_name: customer.name,
+                    slot_info: `${slot.screen_type || 'Screen'} | | ${slot.slot_time?.slice(0, 5) || 'TBD'}`,
+                };
+            });
+
+            // Sort newest first based on date
+            mapped.sort((a, b) => b.date > a.date ? 1 : -1);
+            setBookings(mapped);
         } catch (err) {
             console.error(err);
         } finally {
@@ -56,7 +98,7 @@ const PreviousBookings = () => {
             ) : (
                 <div className="space-y-6">
                     {bookings.map((booking, i) => (
-                        <motion.div 
+                        <motion.div
                             key={booking.booking_id}
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
@@ -70,7 +112,7 @@ const PreviousBookings = () => {
                                             <span className="text-[10px] uppercase tracking-[0.3em] text-accent font-black">Ref: {booking.booking_id}</span>
                                             <h3 className="text-2xl font-heading">{booking.slot_info.split('|')[0]}</h3>
                                         </div>
-                                        <div className={`px-4 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${booking.payment_status === 'confirmed' ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20'}`}>
+                                        <div className={`px-4 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${booking.payment_status === 'completed' || booking.payment_status === 'confirmed' ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20'}`}>
                                             {booking.payment_status}
                                         </div>
                                     </div>
@@ -95,7 +137,7 @@ const PreviousBookings = () => {
                                     </div>
                                 </div>
 
-                                <Link 
+                                <Link
                                     to={`/receipt/${booking.booking_id}`}
                                     className="bg-white/5 md:w-24 flex items-center justify-center border-l border-white/5 group-hover:bg-accent group-hover:text-primary transition-all duration-500"
                                 >

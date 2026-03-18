@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import api from '../utils/api';
-import { 
-    LayoutDashboard, Calendar, Users, Settings, Plus, BarChart3, Search, 
-    Clock, QrCode, CheckCircle, XCircle, TrendingUp, TrendingDown, 
-    Receipt, UserPlus, Star, Crown, Wallet
+import { db } from '../lib/firebase';
+import {
+  collection, getDocs, addDoc, query, where, orderBy, serverTimestamp, getDoc, doc
+} from 'firebase/firestore';
+import {
+  LayoutDashboard, Calendar, Users, Settings, Plus, Clock,
+  TrendingUp, Receipt, Star, Crown, Wallet
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -14,23 +16,26 @@ const AdminDashboard = () => {
     const [customers, setCustomers] = useState([]);
     const [expenses, setExpenses] = useState([]);
     const [loading, setLoading] = useState(false);
-    
-    // Forms
+
     const [showExpenseModal, setShowExpenseModal] = useState(false);
     const [expenseForm, setExpenseForm] = useState({ title: '', amount: '', date: new Date().toISOString().split('T')[0], description: '' });
-    
+
     const [showBookingModal, setShowBookingModal] = useState(false);
     const [bookingForm, setBookingForm] = useState({ name: '', mobile: '', slot_id: '', guest_count: 2, date: new Date().toISOString().split('T')[0] });
     const [availableSlots, setAvailableSlots] = useState([]);
 
     useEffect(() => {
         if (showBookingModal) {
-            const fetchAvailable = async () => {
+            const fetchAvail = async () => {
                 const date = new Date().toISOString().split('T')[0];
-                const res = await api.get(`slots/available/?date=${date}`);
-                setAvailableSlots(res.data);
+                const slotsSnap = await getDocs(collection(db, 'slots'));
+                const allSlots = slotsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+                const bQ = query(collection(db, 'bookings'), where('booking_date', '==', date));
+                const bSnap = await getDocs(bQ);
+                const bookedIds = bSnap.docs.map(d => d.data().slot_id);
+                setAvailableSlots(allSlots.filter(s => !bookedIds.includes(s.id)));
             };
-            fetchAvailable();
+            fetchAvail();
         }
     }, [showBookingModal]);
 
@@ -43,53 +48,182 @@ const AdminDashboard = () => {
 
     const fetchAnalytics = async () => {
         try {
-            const res = await api.get('bookings/analytics/');
-            setAnalytics(res.data);
+            const today = new Date().toISOString().split('T')[0];
+            const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+
+            const allBookingsSnap = await getDocs(collection(db, 'bookings'));
+            const allBookings = allBookingsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            const todayBookings = allBookings.filter(b => b.booking_date === today);
+            const monthBookings = allBookings.filter(b => b.booking_date >= startOfMonth);
+
+            const expSnap = await getDocs(collection(db, 'expenses'));
+            const allExpenses = expSnap.docs.map(d => d.data());
+            const monthExpenses = allExpenses.filter(e => e.date >= startOfMonth);
+
+            const today_revenue = todayBookings.reduce((s, b) => s + (b.price || 0), 0);
+            const month_revenue = monthBookings.reduce((s, b) => s + (b.price || 0), 0);
+            const monthly_expenses = monthExpenses.reduce((s, e) => s + Number(e.amount || 0), 0);
+            const net_profit = month_revenue - monthly_expenses;
+
+            // Fetch slot and customer info for aggregate stats
+            const slotsSnap = await getDocs(collection(db, 'slots'));
+            const slotsMap = {};
+            slotsSnap.docs.forEach(d => { slotsMap[d.id] = d.data(); });
+
+            const custsSnap = await getDocs(collection(db, 'customers'));
+            const custsMap = {};
+            custsSnap.docs.forEach(d => { custsMap[d.id] = d.data(); });
+
+            const customerStats = {};
+            const slotStats = {};
+
+            allBookings.forEach(b => {
+                const cust = custsMap[b.customer_id] || {};
+                const slot = slotsMap[b.slot_id] || {};
+
+                if (!customerStats[b.customer_id]) {
+                    customerStats[b.customer_id] = { customer__name: cust.name || 'Unknown', customer__mobile: cust.mobile_number || '', total_spent: 0, count: 0 };
+                }
+                customerStats[b.customer_id].total_spent += (b.price || 0);
+                customerStats[b.customer_id].count += 1;
+
+                if (!slotStats[b.slot_id]) {
+                    slotStats[b.slot_id] = { slot__start_time: slot.slot_time || '', slot__screen__screen_name: slot.screen_type || '', count: 0 };
+                }
+                slotStats[b.slot_id].count += 1;
+            });
+
+            setAnalytics({
+                today_bookings: todayBookings.length,
+                today_revenue,
+                monthly_expenses,
+                net_profit,
+                top_customers: Object.values(customerStats).sort((a, b) => b.total_spent - a.total_spent).slice(0, 5),
+                popular_slots: Object.values(slotStats).sort((a, b) => b.count - a.count).slice(0, 5),
+            });
         } catch (err) { console.error(err); }
     };
 
     const fetchAllBookings = async () => {
         setLoading(true);
         try {
-            const res = await api.get('bookings/admin/bookings/');
-            setBookings(res.data);
+            const snap = await getDocs(collection(db, 'bookings'));
+            const raw = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            const slotsSnap = await getDocs(collection(db, 'slots'));
+            const slotsMap = {};
+            slotsSnap.docs.forEach(d => { slotsMap[d.id] = d.data(); });
+
+            const custsSnap = await getDocs(collection(db, 'customers'));
+            const custsMap = {};
+            custsSnap.docs.forEach(d => { custsMap[d.id] = d.data(); });
+
+            const paymentsSnap = await getDocs(collection(db, 'payments'));
+            const paymentsMap = {};
+            paymentsSnap.docs.forEach(d => { paymentsMap[d.data().booking_id] = d.data().status; });
+
+            const mapped = raw.map(b => ({
+                booking_id: b.id,
+                customer_name: custsMap[b.customer_id]?.name || 'Unknown',
+                customer: { mobile: custsMap[b.customer_id]?.mobile_number || '' },
+                date: b.booking_date,
+                slot_info: `${slotsMap[b.slot_id]?.screen_type || ''} | | ${slotsMap[b.slot_id]?.slot_time?.slice(0, 5) || ''}`,
+                payment_status: paymentsMap[b.id] || 'pending',
+            }));
+
+            mapped.sort((a, b) => b.date > a.date ? 1 : -1);
+            setBookings(mapped);
         } catch (err) { console.error(err); }
         finally { setLoading(false); }
     };
 
     const fetchCustomers = async () => {
         try {
-            const res = await api.get('customers/admin/customers/');
-            setCustomers(res.data);
+            const custsSnap = await getDocs(collection(db, 'customers'));
+            const memSnap = await getDocs(collection(db, 'memberships'));
+            const memberCustIds = memSnap.docs.filter(d => d.data().status === 'active').map(d => d.data().customer_id);
+            const mapped = custsSnap.docs.map(d => ({ id: d.id, ...d.data(), is_member: memberCustIds.includes(d.id) }));
+            setCustomers(mapped);
         } catch (err) { console.error(err); }
     };
 
     const fetchExpenses = async () => {
         try {
-            const res = await api.get('bookings/expenses/');
-            setExpenses(res.data);
+            const snap = await getDocs(collection(db, 'expenses'));
+            const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            data.sort((a, b) => b.date > a.date ? 1 : -1);
+            setExpenses(data);
         } catch (err) { console.error(err); }
     };
 
     const logExpense = async (e) => {
         e.preventDefault();
         try {
-            await api.post('bookings/expenses/', expenseForm);
+            await addDoc(collection(db, 'expenses'), {
+                title: expenseForm.title,
+                amount: Number(expenseForm.amount),
+                date: expenseForm.date,
+                description: expenseForm.description,
+                created_at: serverTimestamp(),
+            });
             setShowExpenseModal(false);
+            setExpenseForm({ title: '', amount: '', date: new Date().toISOString().split('T')[0], description: '' });
             fetchExpenses();
             if (view === 'overview') fetchAnalytics();
-        } catch (err) { alert("Failed to log expense"); }
+        } catch (err) { alert('Failed to log expense'); }
     };
 
     const manualBooking = async (e) => {
         e.preventDefault();
         try {
-            await api.post('bookings/manual-block/', bookingForm);
-            alert("Reservation recorded successfully.");
+            let custId;
+            const q = query(collection(db, 'customers'), where('mobile_number', '==', bookingForm.mobile));
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+                custId = snap.docs[0].id;
+            } else {
+                const ref = await addDoc(collection(db, 'customers'), {
+                    name: bookingForm.name,
+                    mobile_number: bookingForm.mobile,
+                    created_at: serverTimestamp(),
+                });
+                custId = ref.id;
+            }
+
+            const slotSnap = await getDoc(doc(db, 'slots', bookingForm.slot_id));
+            const slotPrice = slotSnap.exists() ? (slotSnap.data().non_member_price || 0) : 0;
+
+            const bookingRef = await addDoc(collection(db, 'bookings'), {
+                customer_id: custId,
+                slot_id: bookingForm.slot_id,
+                booking_date: bookingForm.date,
+                guest_count: bookingForm.guest_count,
+                price: slotPrice,
+                status: 'confirmed',
+                created_at: serverTimestamp(),
+            });
+
+            await addDoc(collection(db, 'payments'), {
+                booking_id: bookingRef.id,
+                amount: slotPrice,
+                status: 'confirmed',
+                created_at: serverTimestamp(),
+            });
+
+            alert('Reservation recorded successfully.');
             setShowBookingModal(false);
             fetchAllBookings();
-        } catch (err) { alert("Failed to block slot"); }
+        } catch (err) { alert('Failed: ' + err.message); }
     };
+
+    const navItems = [
+        { id: 'overview', icon: <LayoutDashboard size={20} />, label: 'Analytics' },
+        { id: 'bookings', icon: <Calendar size={20} />, label: 'Reservations' },
+        { id: 'members', icon: <Users size={20} />, label: 'Elite Circle' },
+        { id: 'expenses', icon: <Wallet size={20} />, label: 'Finance' },
+        { id: 'settings', icon: <Settings size={20} />, label: 'Lounge Config' },
+    ];
 
     return (
         <div className="flex min-h-screen luxury-bg mesh-pattern">
@@ -102,16 +236,9 @@ const AdminDashboard = () => {
                         <p className="text-[8px] uppercase tracking-[0.3em] text-white/30">Executive Dashboard</p>
                     </div>
                 </div>
-
                 <nav className="space-y-3">
-                    {[
-                        { id: 'overview', icon: <LayoutDashboard size={20} />, label: 'Analytics' },
-                        { id: 'bookings', icon: <Calendar size={20} />, label: 'Reservations' },
-                        { id: 'members', icon: <Users size={20} />, label: 'Elite Circle' },
-                        { id: 'expenses', icon: <Wallet size={20} />, label: 'Finance' },
-                        { id: 'settings', icon: <Settings size={20} />, label: 'Lounge Config' },
-                    ].map((item) => (
-                        <button 
+                    {navItems.map((item) => (
+                        <button
                             key={item.id}
                             onClick={() => setView(item.id)}
                             className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-all duration-300 ${view === item.id ? 'bg-accent text-primary font-bold shadow-lg shadow-accent/20' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
@@ -122,7 +249,7 @@ const AdminDashboard = () => {
                 </nav>
             </div>
 
-            {/* Content Area */}
+            {/* Content */}
             <div className="flex-1 p-12 overflow-y-auto">
                 <AnimatePresence mode="wait">
                     {view === 'overview' && analytics && (
@@ -142,33 +269,19 @@ const AdminDashboard = () => {
                                 </div>
                             </header>
 
-                            {/* Stats Grid */}
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-                                <div className="navy-card p-8">
-                                    <p className="text-white/30 text-[9px] uppercase tracking-widest font-black mb-2">Today's Guests</p>
-                                    <h3 className="text-3xl font-heading text-accent font-black">{analytics.today_bookings}</h3>
-                                </div>
-                                <div className="navy-card p-8 border-green-500/20">
-                                    <p className="text-white/30 text-[9px] uppercase tracking-widest font-black mb-2">Today's Revenue</p>
-                                    <h3 className="text-3xl font-heading text-green-500 font-black">₹{analytics.today_revenue}</h3>
-                                </div>
-                                <div className="navy-card p-8 border-red-500/20">
-                                    <p className="text-white/30 text-[9px] uppercase tracking-widest font-black mb-2">Monthly Expenses</p>
-                                    <h3 className="text-3xl font-heading text-red-400 font-black">₹{analytics.monthly_expenses}</h3>
-                                </div>
-                                <div className="navy-card p-8 border-accent/40 bg-accent/5">
-                                    <p className="text-white/30 text-[9px] uppercase tracking-widest font-black mb-2">Net Profit</p>
-                                    <h3 className="text-3xl font-heading gold-text-gradient font-black">₹{analytics.net_profit}</h3>
-                                </div>
+                                <div className="navy-card p-8"><p className="text-white/30 text-[9px] uppercase tracking-widest font-black mb-2">Today's Guests</p><h3 className="text-3xl font-heading text-accent font-black">{analytics.today_bookings}</h3></div>
+                                <div className="navy-card p-8 border-green-500/20"><p className="text-white/30 text-[9px] uppercase tracking-widest font-black mb-2">Today's Revenue</p><h3 className="text-3xl font-heading text-green-500 font-black">₹{analytics.today_revenue}</h3></div>
+                                <div className="navy-card p-8 border-red-500/20"><p className="text-white/30 text-[9px] uppercase tracking-widest font-black mb-2">Monthly Expenses</p><h3 className="text-3xl font-heading text-red-400 font-black">₹{analytics.monthly_expenses}</h3></div>
+                                <div className="navy-card p-8 border-accent/40 bg-accent/5"><p className="text-white/30 text-[9px] uppercase tracking-widest font-black mb-2">Net Profit</p><h3 className="text-3xl font-heading gold-text-gradient font-black">₹{analytics.net_profit}</h3></div>
                             </div>
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                {/* Top Customers */}
                                 <div className="glass-card p-10">
                                     <h4 className="flex items-center gap-3 text-xl font-heading mb-8"><Star className="w-5 h-5 text-accent"/> Elite Contributors</h4>
                                     <div className="space-y-6">
                                         {analytics.top_customers.map((c, i) => (
-                                            <div key={i} className="flex justify-between items-center group">
+                                            <div key={i} className="flex justify-between items-center">
                                                 <div className="flex items-center gap-4">
                                                     <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center text-accent font-black text-xs">{i+1}</div>
                                                     <div>
@@ -184,8 +297,6 @@ const AdminDashboard = () => {
                                         ))}
                                     </div>
                                 </div>
-
-                                {/* Popular Slots */}
                                 <div className="glass-card p-10">
                                     <h4 className="flex items-center gap-3 text-xl font-heading mb-8"><Clock className="w-5 h-5 text-accent"/> Prime Slots</h4>
                                     <div className="space-y-6">
@@ -194,7 +305,7 @@ const AdminDashboard = () => {
                                                 <div className="flex items-center gap-4">
                                                     <div className="h-10 w-[2px] bg-accent/30"></div>
                                                     <div>
-                                                        <p className="font-bold">{s.slot__start_time.slice(0, 5)} - {s.slot__screen__screen_name}</p>
+                                                        <p className="font-bold">{s.slot__start_time?.slice(0,5)} - {s.slot__screen__screen_name}</p>
                                                         <p className="text-[9px] text-white/20 uppercase tracking-widest">Peak Demand Slot</p>
                                                     </div>
                                                 </div>
@@ -225,23 +336,11 @@ const AdminDashboard = () => {
                                     </thead>
                                     <tbody>
                                         {bookings.map((b, i) => (
-                                            <tr key={i} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors group">
-                                                <td className="p-6">
-                                                    <p className="text-accent font-black tracking-widest text-[10px]">{b.booking_id}</p>
-                                                </td>
-                                                <td className="p-6">
-                                                    <p className="font-bold">{b.customer_name}</p>
-                                                    <p className="text-[10px] text-white/20 italic">{b.customer.mobile}</p>
-                                                </td>
-                                                <td className="p-6">
-                                                    <p className="text-sm">{b.slot_info.split('|')[0]}</p>
-                                                    <p className="text-[10px] text-accent font-medium">{b.date} | {b.slot_info.split('|')[2]}</p>
-                                                </td>
-                                                <td className="p-6">
-                                                    <span className={`px-4 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${b.payment_status === 'confirmed' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                                                        {b.payment_status}
-                                                    </span>
-                                                </td>
+                                            <tr key={i} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
+                                                <td className="p-6"><p className="text-accent font-black tracking-widest text-[10px]">{b.booking_id}</p></td>
+                                                <td className="p-6"><p className="font-bold">{b.customer_name}</p><p className="text-[10px] text-white/20 italic">{b.customer.mobile}</p></td>
+                                                <td className="p-6"><p className="text-sm">{b.slot_info.split('|')[0]}</p><p className="text-[10px] text-accent font-medium">{b.date} | {b.slot_info.split('|')[2]}</p></td>
+                                                <td className="p-6"><span className={`px-4 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${b.payment_status === 'confirmed' || b.payment_status === 'completed' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>{b.payment_status}</span></td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -257,19 +356,12 @@ const AdminDashboard = () => {
                                 {customers.map((c, i) => (
                                     <div key={i} className="navy-card !p-8 flex flex-col justify-between group">
                                         <div className="flex justify-between items-start mb-6">
-                                            <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-accent shadow-xl">
-                                                <Users size={20} />
-                                            </div>
-                                            {c.is_member && (
-                                                <div className="bg-accent text-primary px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest shadow-lg shadow-accent/20">
-                                                    Member
-                                                </div>
-                                            )}
+                                            <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-accent shadow-xl"><Users size={20} /></div>
+                                            {c.is_member && <div className="bg-accent text-primary px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest shadow-lg shadow-accent/20">Member</div>}
                                         </div>
                                         <div>
                                             <h4 className="text-xl font-heading mb-1">{c.name}</h4>
-                                            <p className="text-xs text-white/20 tracking-widest uppercase mb-4">{c.mobile}</p>
-                                            <p className="text-[10px] text-white/40 italic mb-6">{c.email || 'No email registered'}</p>
+                                            <p className="text-xs text-white/20 tracking-widest uppercase mb-4">{c.mobile_number}</p>
                                         </div>
                                         <button className="text-[10px] uppercase tracking-[0.2em] font-black text-accent border border-accent/20 py-3 rounded-xl hover:bg-accent hover:text-primary transition-all">View Dossier</button>
                                     </div>
@@ -277,10 +369,39 @@ const AdminDashboard = () => {
                             </div>
                         </motion.div>
                     )}
+
+                    {view === 'expenses' && (
+                        <motion.div key="expenses" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
+                            <div className="flex justify-between items-center">
+                                <h2 className="text-3xl font-heading">Finance <span className="gold-text-gradient italic">Ledger</span></h2>
+                                <button onClick={() => setShowExpenseModal(true)} className="gold-button !px-6 !py-3 !text-xs flex items-center gap-2"><Plus className="w-4 h-4"/> Log Expense</button>
+                            </div>
+                            <div className="glass-card overflow-hidden">
+                                <table className="w-full text-left">
+                                    <thead className="bg-white/5 border-b border-white/5">
+                                        <tr>
+                                            <th className="p-6 text-[10px] uppercase tracking-[0.3em] text-white/40">Title</th>
+                                            <th className="p-6 text-[10px] uppercase tracking-[0.3em] text-white/40">Amount</th>
+                                            <th className="p-6 text-[10px] uppercase tracking-[0.3em] text-white/40">Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {expenses.map((e, i) => (
+                                            <tr key={i} className="border-t border-white/5 hover:bg-white/[0.02]">
+                                                <td className="p-6 font-medium">{e.title}</td>
+                                                <td className="p-6 text-red-400 font-bold">₹{e.amount}</td>
+                                                <td className="p-6 text-white/40 text-sm">{e.date}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </motion.div>
+                    )}
                 </AnimatePresence>
             </div>
 
-            {/* Modals */}
+            {/* Expense Modal */}
             {showExpenseModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowExpenseModal(false)}></div>
@@ -306,7 +427,8 @@ const AdminDashboard = () => {
                     </motion.div>
                 </div>
             )}
-            
+
+            {/* Manual Booking Modal */}
             {showBookingModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowBookingModal(false)}></div>
@@ -315,26 +437,21 @@ const AdminDashboard = () => {
                         <form onSubmit={manualBooking} className="space-y-6">
                             <div className="grid grid-cols-2 gap-6">
                                 <div className="space-y-2">
-                                    <label className="text-[10px] uppercase tracking-widest text-white/30 font-black">Dignitary Name</label>
-                                    <input type="text" required placeholder="Guest Name" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm" value={bookingForm.name} onChange={e => setBookingForm({...bookingForm, name: e.target.value})} />
+                                    <label className="text-[10px] uppercase tracking-widest text-white/30 font-black">Guest Name</label>
+                                    <input type="text" required className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm" value={bookingForm.name} onChange={e => setBookingForm({...bookingForm, name: e.target.value})} />
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-[10px] uppercase tracking-widest text-white/30 font-black">Mobile</label>
-                                    <input type="tel" required placeholder="Primary Contact" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm" value={bookingForm.mobile} onChange={e => setBookingForm({...bookingForm, mobile: e.target.value})} />
+                                    <input type="tel" required className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm" value={bookingForm.mobile} onChange={e => setBookingForm({...bookingForm, mobile: e.target.value})} />
                                 </div>
                             </div>
                             <div className="space-y-2">
-                                <label className="text-[10px] uppercase tracking-widest text-white/30 font-black">Target Slot</label>
-                                <select 
-                                    className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none appearance-none focus:border-accent text-sm text-white/80"
-                                    value={bookingForm.slot_id}
-                                    onChange={e => setBookingForm({...bookingForm, slot_id: e.target.value})}
-                                    required
-                                >
+                                <label className="text-[10px] uppercase tracking-widest text-white/30 font-black">Select Slot</label>
+                                <select required className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none appearance-none focus:border-accent text-sm text-white/80" value={bookingForm.slot_id} onChange={e => setBookingForm({...bookingForm, slot_id: e.target.value})}>
                                     <option value="">Select an Available Slot...</option>
                                     {availableSlots.map(slot => (
                                         <option key={slot.id} value={slot.id} className="bg-primary text-white">
-                                            {slot.start_time.slice(0,5)} - {slot.screen_name} (₹{slot.price})
+                                            {slot.slot_time?.slice(0,5)} - {slot.screen_type} (₹{slot.non_member_price})
                                         </option>
                                     ))}
                                 </select>

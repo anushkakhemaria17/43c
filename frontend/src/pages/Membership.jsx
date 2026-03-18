@@ -1,8 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import api from '../utils/api';
+import { db } from '../lib/firebase';
 import { Crown, CheckCircle2, Star, Zap, ShieldCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
+import {
+  collection,
+  addDoc,
+  query,
+  where,
+  getDocs,
+  serverTimestamp,
+} from 'firebase/firestore';
 
 const Membership = () => {
     const { customer, updateProfile } = useAuth();
@@ -14,6 +22,7 @@ const Membership = () => {
             name: "Elite Monthly",
             price: 1999,
             days: 30,
+            type: 'monthly',
             features: ["Priority Slot Booking", "20% Discount on All Slots", "Complimentary Brews", "Valet Parking"]
         },
         {
@@ -21,6 +30,7 @@ const Membership = () => {
             name: "Prestige Yearly",
             price: 19999,
             days: 365,
+            type: 'yearly',
             features: ["All Monthly Features", "35% Discount on All Slots", "Private Event Priority", "Dedicated Concierge", "Gift Vouchers worth ₹5000"]
         }
     ];
@@ -32,11 +42,31 @@ const Membership = () => {
         }
         setLoading(true);
         try {
-            const res = await api.post('customers/purchase-membership/', { plan_id: planId });
-            updateProfile(res.data.customer);
-            alert("Welcome to the 43C Elite! Your membership is now active.");
+            const plan = plans.find(p => p.id === planId);
+
+            // Deactivate old memberships
+            const oldQ = query(
+                collection(db, 'memberships'),
+                where('customer_id', '==', customer.id),
+                where('status', '==', 'active')
+            );
+            // (We just insert a fresh one; Firestore rules can enforce one active)
+
+            await addDoc(collection(db, 'memberships'), {
+                customer_id: customer.id,
+                membership_type: plan.type,
+                start_date: new Date().toISOString(),
+                end_date: new Date(Date.now() + plan.days * 24 * 60 * 60 * 1000).toISOString(),
+                status: 'active',
+                created_at: serverTimestamp(),
+            });
+
+            const updatedCustomer = { ...customer, is_member: true };
+            updateProfile(updatedCustomer);
+            alert('Welcome to the 43C Elite! Your membership is now active.');
         } catch (err) {
-            alert("Transaction failed. Please contact concierge.");
+            console.error(err);
+            alert('Transaction failed. Please contact concierge.');
         } finally {
             setLoading(false);
         }
@@ -55,7 +85,7 @@ const Membership = () => {
 
             <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
                 {plans.map((plan, i) => (
-                    <motion.div 
+                    <motion.div
                         key={plan.id}
                         initial={{ opacity: 0, y: 30 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -67,7 +97,7 @@ const Membership = () => {
                                 Best Value
                             </div>
                         )}
-                        
+
                         <div className="space-y-8 relative z-10">
                             <div>
                                 <h3 className="text-3xl font-heading mb-2">{plan.name}</h3>
@@ -88,7 +118,7 @@ const Membership = () => {
                                 ))}
                             </div>
 
-                            <button 
+                            <button
                                 onClick={() => handlePurchase(plan.id)}
                                 disabled={loading || customer?.is_member}
                                 className={`w-full py-5 rounded-full font-bold uppercase tracking-widest text-xs transition-all duration-500 overflow-hidden relative group/btn ${customer?.is_member ? 'bg-white/5 text-white/20 cursor-not-allowed' : 'bg-white/5 hover:bg-white/10 text-white'}`}
@@ -102,13 +132,11 @@ const Membership = () => {
                             </button>
                         </div>
 
-                        {/* Aesthetic Background Shapes */}
                         <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-accent/5 blur-3xl -z-10 group-hover:bg-accent/10 transition-colors"></div>
                     </motion.div>
                 ))}
             </div>
 
-            {/* Satisfaction Row */}
             <div className="mt-24 grid grid-cols-2 md:grid-cols-4 gap-8 px-4 opacity-40">
                 {[
                     { icon: ShieldCheck, label: "Secure Payments" },

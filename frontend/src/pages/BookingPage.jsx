@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import api from '../utils/api';
+import { db } from '../lib/firebase';
+import {
+  collection,
+  getDocs,
+  addDoc,
+  query,
+  where,
+  serverTimestamp,
+} from 'firebase/firestore';
 import { Calendar, Clock, Users, ChevronRight, CheckCircle2, UserCheck, ShieldCheck, Crown, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -29,14 +37,18 @@ const BookingPage = () => {
         if (mobile.length < 10) return;
         setLoading(true);
         try {
-            const res = await api.post('customers/check/', { mobile });
-            if (res.data.exists) {
-                setName(res.data.customer.name);
+            const q = query(collection(db, 'customers'), where('mobile_number', '==', mobile));
+            const snap = await getDocs(q);
+            if (!snap.empty) {
+                setName(snap.docs[0].data().name);
                 setAuthMode('login');
             } else {
                 setAuthMode('register');
             }
-        } catch (err) { alert("Validation failed."); }
+        } catch (err) {
+            console.error('Firebase error:', err);
+            alert('Validation failed: ' + (err?.message || err));
+        }
         finally { setLoading(false); }
     };
 
@@ -47,8 +59,7 @@ const BookingPage = () => {
             await login(mobile);
             setStep(2);
         } catch (err) {
-            const msg = err.response?.data?.detail || err.response?.data?.error || "Login failed. Verify your details.";
-            alert(msg);
+            alert(err.message || 'Login failed. Verify your details.');
         } finally { setLoading(false); }
     };
 
@@ -56,11 +67,10 @@ const BookingPage = () => {
         e.preventDefault();
         setLoading(true);
         try {
-            await register({ name, mobile, email, username: mobile });
+            await register({ name, mobile, email });
             setStep(2);
         } catch (err) {
-            const msg = err.response?.data?.detail || err.response?.data?.error || "Registration failed. Check your data.";
-            alert(msg);
+            alert(err.message || 'Registration failed. Check your data.');
         } finally { setLoading(false); }
     };
 
@@ -68,8 +78,15 @@ const BookingPage = () => {
         setLoading(true);
         try {
             const date = new Date().toISOString().split('T')[0];
-            const res = await api.get(`slots/available/?date=${date}`);
-            setSlots(res.data);
+            const slotsSnap = await getDocs(collection(db, 'slots'));
+            const allSlots = slotsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            const bookingsQ = query(collection(db, 'bookings'), where('booking_date', '==', date));
+            const bookingsSnap = await getDocs(bookingsQ);
+            const bookedSlotIds = bookingsSnap.docs.map(d => d.data().slot_id);
+
+            const available = allSlots.filter(s => !bookedSlotIds.includes(s.id));
+            setSlots(available);
         } catch (err) { console.error(err); }
         finally { setLoading(false); }
     };
@@ -78,22 +95,48 @@ const BookingPage = () => {
         if (!selectedSlot) return;
         setLoading(true);
         try {
-            const res = await api.post('bookings/book/', {
+            const date = new Date().toISOString().split('T')[0];
+
+            // Check membership
+            let isMember = false;
+            if (customer) {
+                const memQ = query(
+                    collection(db, 'memberships'),
+                    where('customer_id', '==', customer.id),
+                    where('status', '==', 'active')
+                );
+                const memSnap = await getDocs(memQ);
+                isMember = !memSnap.empty;
+            }
+
+            const price = isMember
+                ? (selectedSlot.member_price ?? selectedSlot.non_member_price)
+                : selectedSlot.non_member_price;
+
+            const bookingRef = await addDoc(collection(db, 'bookings'), {
+                customer_id: customer.id,
                 slot_id: selectedSlot.id,
-                guest_count: guestCount
+                booking_date: date,
+                guest_count: guestCount,
+                price,
+                status: 'pending',
+                created_at: serverTimestamp(),
             });
-            
-            // Mock payment verification
+
+            // Simulate payment confirmation
             setTimeout(async () => {
-                await api.post('bookings/verify-payment/', {
-                    booking_id: res.data.booking.booking_id,
-                    razorpay_payment_id: 'pay_mock_123',
-                    razorpay_signature: 'sig_mock_123'
+                await addDoc(collection(db, 'payments'), {
+                    booking_id: bookingRef.id,
+                    amount: price,
+                    status: 'completed',
+                    created_at: serverTimestamp(),
                 });
                 setStep(3);
             }, 1000);
-        } catch (err) { alert("Booking failed"); }
-        finally { setLoading(false); }
+        } catch (err) {
+            console.error(err);
+            alert('Booking failed');
+        } finally { setLoading(false); }
     };
 
     return (
@@ -120,8 +163,8 @@ const BookingPage = () => {
                                         <h2 className="text-3xl font-heading">Welcome</h2>
                                         <p className="text-[10px] uppercase tracking-widest text-white/40">Enter mobile to continue</p>
                                     </div>
-                                    <input 
-                                        type="tel" placeholder="Mobile Number" 
+                                    <input
+                                        type="tel" placeholder="Mobile Number"
                                         className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl focus:border-accent outline-none text-center text-xl tracking-widest"
                                         required value={mobile} onChange={(e) => setMobile(e.target.value)}
                                     />
@@ -156,7 +199,7 @@ const BookingPage = () => {
                                     </div>
                                     <div className="space-y-1">
                                         <label className="text-[9px] uppercase tracking-widest text-accent font-black">Email Address</label>
-                                        <input type="email" required className="w-full bg-white/5 border border-white/10 p-4 rounded-xl focus:border-accent outline-none" value={email} onChange={e => setEmail(e.target.value)} />
+                                        <input type="email" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl focus:border-accent outline-none" value={email} onChange={e => setEmail(e.target.value)} />
                                     </div>
                                     <button className="gold-button w-full py-5 uppercase tracking-widest text-xs font-black mt-4">
                                         {loading ? 'Creating Account...' : 'Sign Up & Reserve'}
@@ -175,11 +218,6 @@ const BookingPage = () => {
                                 <h1 className="text-4xl font-heading mb-2">Select <span className="gold-text-gradient">Experience</span></h1>
                                 <p className="text-white/30 text-xs uppercase tracking-widest">Available private slots for today</p>
                             </div>
-                            {customer?.is_member && (
-                                <div className="px-4 py-2 bg-accent/10 border border-accent/20 rounded-full text-[10px] text-accent font-black uppercase tracking-widest flex items-center gap-2">
-                                    <Crown size={14}/> Exclusive Member Rates Applied
-                                </div>
-                            )}
                         </div>
 
                         <div className="grid md:grid-cols-3 gap-8">
@@ -188,14 +226,14 @@ const BookingPage = () => {
                                     <div className="col-span-2 glass-card py-20 text-center opacity-30 italic">No slots available for selection.</div>
                                 ) : (
                                     slots.map((slot) => (
-                                        <button 
-                                            key={slot.id} 
+                                        <button
+                                            key={slot.id}
                                             onClick={() => setSelectedSlot(slot)}
                                             className={`p-8 rounded-[2rem] border transition-all duration-500 text-left relative overflow-hidden group ${selectedSlot?.id === slot.id ? 'bg-accent border-accent' : 'bg-white/5 border-white/10 hover:border-accent/30'}`}
                                         >
-                                            <div className={`font-heading text-3xl mb-1 ${selectedSlot?.id === slot.id ? 'text-primary' : 'text-white'}`}>{slot.start_time.slice(0, 5)}</div>
-                                            <div className={`text-[10px] uppercase tracking-widest font-black mb-6 ${selectedSlot?.id === slot.id ? 'text-primary' : 'text-accent'}`}>{slot.screen_name}</div>
-                                            <div className={`text-2xl font-bold font-heading ${selectedSlot?.id === slot.id ? 'text-primary' : 'gold-text-gradient'}`}>₹{customer?.is_member ? slot.member_price : slot.price}</div>
+                                            <div className={`font-heading text-3xl mb-1 ${selectedSlot?.id === slot.id ? 'text-primary' : 'text-white'}`}>{slot.slot_time?.slice(0, 5)}</div>
+                                            <div className={`text-[10px] uppercase tracking-widest font-black mb-6 ${selectedSlot?.id === slot.id ? 'text-primary' : 'text-accent'}`}>{slot.screen_type}</div>
+                                            <div className={`text-2xl font-bold font-heading ${selectedSlot?.id === slot.id ? 'text-primary' : 'gold-text-gradient'}`}>₹{customer?.is_member ? slot.member_price : slot.non_member_price}</div>
                                         </button>
                                     ))
                                 )}
@@ -212,13 +250,13 @@ const BookingPage = () => {
                                     <div className="space-y-4 pt-4 border-t border-white/5">
                                         <div className="flex justify-between text-[10px] uppercase tracking-widest font-bold">
                                             <span className="text-white/20">Base Contribution</span>
-                                            <span>₹{selectedSlot ? (customer?.is_member ? selectedSlot.member_price : selectedSlot.price) : '0'}</span>
+                                            <span>₹{selectedSlot ? (customer?.is_member ? selectedSlot.member_price : selectedSlot.non_member_price) : '0'}</span>
                                         </div>
                                     </div>
                                 </div>
-                                <button 
-                                    onClick={handleBooking} 
-                                    disabled={!selectedSlot || loading} 
+                                <button
+                                    onClick={handleBooking}
+                                    disabled={!selectedSlot || loading}
                                     className="gold-button w-full py-6 uppercase tracking-widest font-black text-xs shadow-2xl shadow-accent/20"
                                 >
                                     {loading ? 'Processing...' : 'Confirm Reservation'}
