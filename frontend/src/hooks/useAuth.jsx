@@ -1,14 +1,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { db } from '../lib/firebase';
 import {
-  collection,
-  query,
-  where,
-  getDocs,
-  addDoc,
-  getDoc,
-  doc,
-  serverTimestamp,
+  collection, query, where, getDocs, addDoc, getDoc, doc, serverTimestamp,
 } from 'firebase/firestore';
 
 const AuthContext = createContext();
@@ -23,7 +16,6 @@ export const AuthProvider = ({ children }) => {
       if (storedCustomer) {
         try {
           const parsed = JSON.parse(storedCustomer);
-          // Re-validate from Firestore
           const snap = await getDoc(doc(db, 'customers', parsed.id));
           if (snap.exists()) {
             const fresh = { id: snap.id, ...snap.data() };
@@ -42,7 +34,22 @@ export const AuthProvider = ({ children }) => {
     initAuth();
   }, []);
 
-  // Look up by mobile number, set auth state
+  /**
+   * Check if a mobile number exists in Firestore.
+   * Returns { exists: bool, name: string|null }
+   */
+  const checkMobile = async (mobile) => {
+    const q = query(collection(db, 'customers'), where('mobile_number', '==', mobile));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      return { exists: true, name: snap.docs[0].data().name };
+    }
+    return { exists: false, name: null };
+  };
+
+  /**
+   * Log in an existing customer by mobile number.
+   */
   const login = async (mobile) => {
     const q = query(collection(db, 'customers'), where('mobile_number', '==', mobile));
     const snap = await getDocs(q);
@@ -54,9 +61,11 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
-  // Create a new customer document
+  /**
+   * Register a new customer with name + mobile.
+   * If mobile already exists, logs them in instead.
+   */
   const register = async ({ name, mobile }) => {
-    // Check if mobile already exists
     const q = query(collection(db, 'customers'), where('mobile_number', '==', mobile));
     const existing = await getDocs(q);
     if (!existing.empty) {
@@ -66,7 +75,6 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('customer', JSON.stringify(data));
       return data;
     }
-
     const ref = await addDoc(collection(db, 'customers'), {
       name,
       mobile_number: mobile,
@@ -90,7 +98,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ customer, loading, login, register, logout, updateProfile }}>
+    <AuthContext.Provider value={{ customer, loading, checkMobile, login, register, logout, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,12 +1,17 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { User, LogOut, Menu, X, Crown } from 'lucide-react';
 
 const Navbar = () => {
   const { customer, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [isOpen, setIsOpen] = React.useState(false);
+
+  if (location.pathname.startsWith('/admin')) {
+    return null;
+  }
 
   return (
     <nav className="fixed w-full z-50 bg-[#05071A]/80 backdrop-blur-lg border-b border-[#D4A95F]/10">
@@ -20,6 +25,7 @@ const Navbar = () => {
 
           <div className="hidden md:flex items-center gap-8">
             <Link to="/book" className="text-sm uppercase tracking-widest hover:text-[#D4A95F] transition-colors">Book Slot</Link>
+            <Link to="/menu" className="text-sm uppercase tracking-widest hover:text-[#D4A95F] transition-colors text-accent flex items-center gap-2">Menu</Link>
             <Link to="/membership" className="text-sm uppercase tracking-widest hover:text-[#D4A95F] transition-colors flex items-center gap-2">
               <Crown className="w-4 h-4 text-accent" /> Membership
             </Link>
@@ -65,6 +71,7 @@ const Navbar = () => {
       <div className={`md:hidden transition-all duration-300 overflow-hidden ${isOpen ? 'max-h-[500px] border-b border-accent/10' : 'max-h-0'}`}>
         <div className="px-4 pt-2 pb-6 space-y-4 bg-[#05071A]">
           <Link to="/book" className="block text-lg font-heading" onClick={() => setIsOpen(false)}>Book Slot</Link>
+          <Link to="/menu" className="block text-lg font-heading text-accent" onClick={() => setIsOpen(false)}>Food Menu</Link>
           <Link to="/membership" className="block text-lg font-heading text-accent" onClick={() => setIsOpen(false)}>Membership</Link>
           <Link to="/profile" className="block text-lg font-heading" onClick={() => setIsOpen(false)}>My Bookings</Link>
           <Link to="/contact" className="block text-lg font-heading" onClick={() => setIsOpen(false)}>Contact Us</Link>

@@ -1,7 +1,7 @@
 import React from 'react';
 import logoImage from '../assets/43C.png';
 import { motion } from 'framer-motion';
-import { ChevronRight, Play, Star, ShieldCheck, Clock, MapPin } from 'lucide-react';
+import { ChevronRight, Play, Star, ShieldCheck, Clock, MapPin, Crown } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const LandingPage = () => {
@@ -41,12 +41,12 @@ const LandingPage = () => {
                                     Reserve Your Experience <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                                 </span>
                             </Link>
-                            <button className="flex items-center gap-4 group">
+                            <Link to="/membership" className="flex items-center gap-4 group">
                                 <span className="w-14 h-14 rounded-full border border-white/20 flex items-center justify-center group-hover:border-accent transition-all">
-                                    <Play className="w-4 h-4 fill-white group-hover:fill-accent" />
+                                    <Crown className="w-4 h-4 text-white group-hover:text-accent" />
                                 </span>
-                                <span className="uppercase tracking-widest text-xs font-bold">Watch Trailer</span>
-                            </button>
+                                <span className="uppercase tracking-widest text-xs font-bold">Explore Memberships</span>
+                            </Link>
                         </div>
                     </motion.div>
 

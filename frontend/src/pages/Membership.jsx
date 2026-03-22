@@ -19,19 +19,19 @@ const Membership = () => {
     const plans = [
         {
             id: 1,
-            name: "Elite Monthly",
+            name: "Silver Tier",
             price: 1999,
             days: 30,
-            type: 'monthly',
-            features: ["Priority Slot Booking", "20% Discount on All Slots", "Complimentary Brews", "Valet Parking"]
+            type: 'silver',
+            features: ["Priority Slot Booking", "Discount on Screen Slots", "Complimentary Brews", "Valet Parking"]
         },
         {
             id: 2,
-            name: "Prestige Yearly",
+            name: "Gold Tier",
             price: 19999,
             days: 365,
-            type: 'yearly',
-            features: ["All Monthly Features", "35% Discount on All Slots", "Private Event Priority", "Dedicated Concierge", "Gift Vouchers worth ₹5000"]
+            type: 'gold',
+            features: ["All Silver Features", "Highest Discount on All Slots", "Private Event Priority", "Dedicated Concierge", "Gift Vouchers worth ₹5000"]
         }
     ];
 

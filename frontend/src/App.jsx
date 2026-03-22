@@ -9,6 +9,9 @@ import AdminLogin from './pages/AdminLogin';
 import Navbar from './components/Navbar';
 import Membership from './pages/Membership';
 import PreviousBookings from './pages/PreviousBookings';
+import MenuPage from './pages/MenuPage';
+import ContactPage from './pages/ContactPage';
+import AdminVerify from './pages/AdminVerify';
 
 function App() {
   return (
@@ -19,10 +22,13 @@ function App() {
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/book" element={<BookingPage />} />
+            <Route path="/menu" element={<MenuPage />} />
             <Route path="/receipt/:id" element={<ReceiptPage />} />
             <Route path="/membership" element={<Membership />} />
             <Route path="/profile" element={<PreviousBookings />} />
+            <Route path="/contact" element={<ContactPage />} />
             <Route path="/admin-login" element={<AdminLogin />} />
+            <Route path="/admin/verify/:id" element={<AdminVerify />} />
             <Route path="/admin/*" element={<AdminDashboard />} />
           </Routes>
         </div>
