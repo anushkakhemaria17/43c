@@ -25,7 +25,7 @@ function App() {
             <Route path="/menu" element={<MenuPage />} />
             <Route path="/receipt/:id" element={<ReceiptPage />} />
             <Route path="/membership" element={<Membership />} />
-            <Route path="/profile" element={<PreviousBookings />} />
+            <Route path="/my-bookings" element={<PreviousBookings />} />
             <Route path="/contact" element={<ContactPage />} />
             <Route path="/admin-login" element={<AdminLogin />} />
             <Route path="/admin/verify/:id" element={<AdminVerify />} />

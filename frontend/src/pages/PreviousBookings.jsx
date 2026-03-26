@@ -131,7 +131,7 @@ const PreviousBookings = () => {
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-3 border-t border-white/5">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 pt-3 border-t border-white/5">
                       <div>
                         <p className="text-[9px] uppercase tracking-widest text-white/20 font-black mb-1">Slots</p>
                         <p className="text-sm text-accent font-medium italic">{b.screen||'Screen 1'} · {formatSlotsDisplay(b.slots)}</p>
@@ -141,14 +141,27 @@ const PreviousBookings = () => {
                         <p className="text-sm">{b.guest_count} People</p>
                       </div>
                       <div>
-                        <p className="text-[9px] uppercase tracking-widest text-white/20 font-black mb-1">Amount</p>
+                        <p className="text-[9px] uppercase tracking-widest text-white/20 font-black mb-1">Total</p>
                         <p className="text-sm font-bold">₹{b.final_price || b.price}</p>
                       </div>
-                      <div>
-                        <p className="text-[9px] uppercase tracking-widest text-white/20 font-black mb-1">Member</p>
-                        <p className="text-sm">{b.is_member ? 'Yes' : 'No'}</p>
-                      </div>
+                      {b.advance_paid != null && (
+                        <div>
+                          <p className="text-[9px] uppercase tracking-widest text-green-500/40 font-black mb-1">Advance</p>
+                          <p className="text-sm font-bold text-green-400">₹{b.advance_paid}</p>
+                        </div>
+                      )}
+                      {b.remaining_amount != null && (
+                        <div>
+                          <p className="text-[9px] uppercase tracking-widest text-yellow-500/40 font-black mb-1">Due</p>
+                          <p className="text-sm font-bold text-yellow-500">₹{b.remaining_amount}</p>
+                        </div>
+                      )}
                     </div>
+                    {b.cancel_reason && (
+                      <div className="px-3 py-2 bg-red-500/5 border border-red-500/10 rounded-lg text-xs text-red-400 mt-2">
+                        <span className="font-bold uppercase tracking-widest text-[9px] opacity-70">Cancel Reason:</span> {b.cancel_reason}
+                      </div>
+                    )}
                   </div>
 
                   <Link to={`/receipt/${b.id}`}
@@ -208,6 +221,11 @@ const PreviousBookings = () => {
                     </span>
                     <span className="text-lg font-heading gold-text-gradient font-black">₹{o.final_price || o.total}</span>
                   </div>
+                  {o.cancel_reason && (
+                    <div className="px-3 py-2 bg-red-500/5 border border-red-500/10 rounded-lg text-xs text-red-400 mt-2">
+                      <span className="font-bold uppercase tracking-widest text-[9px] opacity-70">Cancel Reason:</span> {o.cancel_reason}
+                    </div>
+                  )}
                 </div>
               </motion.div>
             ))}

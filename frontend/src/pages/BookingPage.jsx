@@ -504,7 +504,7 @@ const BookingPage = () => {
             </div>
 
             <div className="flex gap-4 justify-center flex-wrap">
-              <button onClick={() => window.location.href = '/profile'} className="gold-button px-8 py-4 uppercase tracking-widest font-black text-xs">My Bookings</button>
+              <button onClick={() => window.location.href = '/my-bookings'} className="gold-button px-8 py-4 uppercase tracking-widest font-black text-xs">My Bookings</button>
               <button onClick={() => window.location.href = '/menu'} className="glass-card px-8 py-4 uppercase tracking-widest font-black text-xs border-accent/30 hover:bg-accent/10 transition-colors">Order Food</button>
             </div>
           </motion.div>

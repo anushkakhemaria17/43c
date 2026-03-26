@@ -38,7 +38,7 @@ const Navbar = () => {
                 {customer.is_staff && (
                   <Link to="/admin" className="text-[10px] uppercase tracking-widest bg-white/5 hover:bg-accent hover:text-primary px-4 py-2 border border-accent/20 rounded-full text-accent font-black transition-all">Control Panel</Link>
                 )}
-                <Link to="/profile" className="flex items-center gap-2 text-sm hover:text-accent transition-colors group">
+                <Link to="/my-bookings" className="flex items-center gap-2 text-sm hover:text-accent transition-colors group">
                   <div className="w-8 h-8 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center text-accent group-hover:bg-accent group-hover:text-primary transition-all">
                     <User size={16} />
                   </div>
@@ -73,7 +73,7 @@ const Navbar = () => {
           <Link to="/book" className="block text-lg font-heading" onClick={() => setIsOpen(false)}>Book Slot</Link>
           <Link to="/menu" className="block text-lg font-heading text-accent" onClick={() => setIsOpen(false)}>Food Menu</Link>
           <Link to="/membership" className="block text-lg font-heading text-accent" onClick={() => setIsOpen(false)}>Membership</Link>
-          <Link to="/profile" className="block text-lg font-heading" onClick={() => setIsOpen(false)}>My Bookings</Link>
+          <Link to="/my-bookings" className="block text-lg font-heading" onClick={() => setIsOpen(false)}>My Bookings</Link>
           <Link to="/contact" className="block text-lg font-heading" onClick={() => setIsOpen(false)}>Contact Us</Link>
           {customer?.is_staff && (
             <Link to="/admin" className="block text-lg font-heading text-accent" onClick={() => setIsOpen(false)}>Control Panel</Link>

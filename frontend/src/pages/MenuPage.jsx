@@ -349,7 +349,7 @@ const MenuPage = () => {
 
               <div className="flex gap-3">
                 <button onClick={() => setShowConfirm(false)} className="flex-1 gold-button !py-3 !text-[10px]">Continue</button>
-                <button onClick={() => window.location.href = '/profile'} className="flex-1 glass-card border-white/10 !py-3 text-[10px] uppercase tracking-widest font-black hover:bg-white/5 transition-colors text-center">My Orders</button>
+                <button onClick={() => window.location.href = '/my-bookings'} className="flex-1 glass-card border-white/10 !py-3 text-[10px] uppercase tracking-widest font-black hover:bg-white/5 transition-colors text-center">My Orders</button>
               </div>
             </motion.div>
           </div>

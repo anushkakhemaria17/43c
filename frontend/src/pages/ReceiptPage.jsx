@@ -62,7 +62,7 @@ const ReceiptPage = () => {
   return (
     <div className="pt-32 pb-20 px-4 max-w-xl mx-auto min-h-screen">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-        <button onClick={() => navigate('/profile')} className="flex items-center gap-2 text-white/40 mb-10 hover:text-accent transition-colors uppercase tracking-widest text-[10px] font-bold">
+        <button onClick={() => navigate('/my-bookings')} className="flex items-center gap-2 text-white/40 mb-10 hover:text-accent transition-colors uppercase tracking-widest text-[10px] font-bold">
           <ChevronLeft className="w-4 h-4" /> Return to History
         </button>
 

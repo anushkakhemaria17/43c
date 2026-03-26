@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
 import { collection, getDocs, addDoc, query, where, serverTimestamp, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
-import { LayoutDashboard, Calendar, Users, Wallet, Plus, Clock, UtensilsCrossed, Coffee, CheckCircle2, Lock, X, Settings, Shield, BarChart2, MessageCircle } from 'lucide-react';
+import { LayoutDashboard, Calendar, Users, Wallet, Plus, Clock, UtensilsCrossed, Coffee, CheckCircle2, Lock, X, Settings, Shield, BarChart2, MessageCircle, Bell, Phone } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SLOT_HOURS, getSlotLabel, getAvailableDates, getSlotStatusMap, formatSlotsDisplay, getTodayStr } from '../utils/slots';
 import { exportAnalyticsExcel } from '../utils/exportExcel';
+import { createNotification, autoCompleteBookings, openAdminWhatsApp, sendBookingConfirmedWhatsApp } from '../utils/firebaseHelpers';
 
-const BOOKING_STATUSES = ['pending','confirmed','completed'];
-const ORDER_STATUSES   = ['pending','confirmed','served'];
+const BOOKING_STATUSES = ['pending','confirmed','completed','cancelled'];
+const ORDER_STATUSES   = ['pending','confirmed','served','cancelled'];
 
 const StatusBadge = ({ s }) => {
-  const colors = { pending:'text-yellow-400 bg-yellow-500/10 border-yellow-500/30', confirmed:'text-blue-400 bg-blue-500/10 border-blue-500/30', completed:'text-green-400 bg-green-500/10 border-green-500/30', served:'text-green-400 bg-green-500/10 border-green-500/30' };
+  const colors = { pending:'text-yellow-400 bg-yellow-500/10 border-yellow-500/30', confirmed:'text-blue-400 bg-blue-500/10 border-blue-500/30', completed:'text-green-400 bg-green-500/10 border-green-500/30', served:'text-green-400 bg-green-500/10 border-green-500/30', cancelled:'text-red-400 bg-red-500/10 border-red-500/30' };
   return <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${colors[s]||colors.pending}`}>{s}</span>;
 };
 
@@ -51,6 +52,18 @@ const AdminDashboard = () => {
   const [isEditingMenu, setIsEditingMenu] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminForm, setAdminForm] = useState({ name:'', mobile:'', password:'' });
+
+  // New features state
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState(null); // { id, type: 'booking'|'order' }
+  const [cancelReason, setCancelReason] = useState('');
+  const [showAdvanceModal, setShowAdvanceModal] = useState(false);
+  const [advanceTarget, setAdvanceTarget] = useState(null);
+  const [advanceAmount, setAdvanceAmount] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterDate, setFilterDate] = useState('');
+  const [editWaMobile, setEditWaMobile] = useState({});
+  const [notifCount, setNotifCount] = useState({ bookings: 0, orders: 0 });
 
   useEffect(() => {
     if (view==='overview') fetchAnalytics();
@@ -134,11 +147,35 @@ const AdminDashboard = () => {
       const monthFO = allFO.filter(o=>(o.created_at?.seconds||0)>=mStartTs && (o.created_at?.seconds||0)<mEndTs && (o.status==='confirmed'||o.status==='served'));
       const monthE = allE.filter(e=>e.date>=mStartStr && e.date<mEndStr);
       const dayMap = {};
-      monthB.forEach(b=>{ if(!dayMap[b.booking_date]) dayMap[b.booking_date]={bookingTotal:0,foodTotal:0}; dayMap[b.booking_date].bookingTotal+=(b.final_price||b.price||0); });
-      monthFO.forEach(o=>{ const d=o.created_at?.seconds?new Date(o.created_at.seconds*1000).toISOString().split('T')[0]:null; if(!d)return; if(!dayMap[d]) dayMap[d]={bookingTotal:0,foodTotal:0}; dayMap[d].foodTotal+=(o.final_price||o.total||0); });
+      const slotMap = {};
+      const foodMap = {};
+      monthB.forEach(b=>{ 
+        if(!dayMap[b.booking_date]) dayMap[b.booking_date]={bookingTotal:0,foodTotal:0}; 
+        dayMap[b.booking_date].bookingTotal+=(b.final_price||b.price||0); 
+        if (b.slots && b.slots.length) {
+          b.slots.forEach(slot => {
+            const label = getSlotLabel(slot).split(' - ')[0];
+            slotMap[label] = (slotMap[label] || 0) + 1;
+          });
+        }
+      });
+      monthFO.forEach(o=>{ 
+        const d=o.created_at?.seconds?new Date(o.created_at.seconds*1000).toISOString().split('T')[0]:null; 
+        if(d) {
+          if(!dayMap[d]) dayMap[d]={bookingTotal:0,foodTotal:0}; 
+          dayMap[d].foodTotal+=(o.final_price||o.total||0); 
+        }
+        if (o.items && o.items.length) {
+          o.items.forEach(item => {
+            foodMap[item.name] = (foodMap[item.name] || 0) + item.qty;
+          });
+        }
+      });
       const rows = Object.keys(dayMap).sort().map(date=>({ date, bookingTotal:dayMap[date].bookingTotal, foodTotal:dayMap[date].foodTotal, total:dayMap[date].bookingTotal+dayMap[date].foodTotal }));
       const totalExpenses = monthE.reduce((s,e)=>s+Number(e.amount||0),0);
-      setAnalyticsData({ rows, bookingDetails:monthB, foodDetails:monthFO, totalExpenses });
+      const topSlots = Object.entries(slotMap).sort((a,b)=>b[1]-a[1]).slice(0, 5).map(x=>({name:x[0], count:x[1]}));
+      const topFood = Object.entries(foodMap).sort((a,b)=>b[1]-a[1]).slice(0, 5).map(x=>({name:x[0], count:x[1]}));
+      setAnalyticsData({ rows, bookingDetails:monthB, foodDetails:monthFO, totalExpenses, topSlots, topFood });
     } catch(e){ console.error(e); }
     finally { setLoading(false); }
   };
@@ -150,8 +187,13 @@ const AdminDashboard = () => {
       const raw = snap.docs.map(d=>({id:d.id,...d.data()}));
       raw.sort((a,b)=>b.booking_date<a.booking_date?-1:1);
       setBookings(raw);
+      await autoCompleteBookings(raw, (id, status) =>
+        setBookings(prev => prev.map(b => b.id===id ? {...b, status} : b))
+      );
+      setNotifCount(prev => ({...prev, bookings: raw.filter(b=>b.status==='pending').length}));
     } catch(e){ console.error(e); } finally { setLoading(false); }
   };
+
 
   const fetchSlotData = async () => {
     try {
@@ -291,6 +333,84 @@ const AdminDashboard = () => {
     try { await deleteDoc(doc(db,'admins',id)); fetchAdmins(); } catch(e){ alert('Failed'); }
   };
 
+  // Cancel booking/order
+  const openCancelModal = (id, type) => { setCancelTarget({id, type}); setCancelReason(''); setShowCancelModal(true); };
+  const confirmCancel = async () => {
+    if (!cancelReason.trim()) return alert('Please enter a cancellation reason.');
+    const { id, type } = cancelTarget;
+    try {
+      if (type === 'booking') {
+        const b = bookings.find(x => x.id === id);
+        if (b?.status === 'completed') return alert('Cannot cancel a completed booking.');
+        await updateDoc(doc(db,'bookings',id), { status:'cancelled', cancel_reason: cancelReason });
+        setBookings(prev => prev.map(x => x.id===id ? {...x, status:'cancelled', cancel_reason:cancelReason} : x));
+        await createNotification({ userId: b.customer_id, type:'booking_cancelled', message:`Your booking on ${b.booking_date} has been cancelled. Reason: ${cancelReason}`, bookingId: id });
+      } else {
+        const o = foodOrders.find(x => x.id === id);
+        await updateDoc(doc(db,'food_orders',id), { status:'cancelled', cancel_reason: cancelReason });
+        setFoodOrders(prev => prev.map(x => x.id===id ? {...x, status:'cancelled', cancel_reason:cancelReason} : x));
+        if (o) await createNotification({ userId: o.customer_id, type:'order_cancelled', message:`Your food order #${id.slice(0,6)} has been cancelled. Reason: ${cancelReason}`, orderId: id });
+      }
+    } catch(e) { alert('Failed: '+e.message); }
+    setShowCancelModal(false);
+  };
+
+  // Advance payment confirmation
+  const openAdvanceModal = (booking) => { setAdvanceTarget(booking); setAdvanceAmount(''); setShowAdvanceModal(true); };
+  const confirmAdvancePayment = async () => {
+    if (!advanceAmount || isNaN(advanceAmount)) return alert('Enter valid amount.');
+    const adv = Number(advanceAmount);
+    const total = advanceTarget.final_price || advanceTarget.price || 0;
+    const remaining = total - adv;
+    try {
+      await updateDoc(doc(db,'bookings', advanceTarget.id), {
+        status: 'confirmed',
+        advance_paid: adv,
+        remaining_amount: remaining,
+        total_amount: total,
+      });
+      setBookings(prev => prev.map(b => b.id===advanceTarget.id ? {...b, status:'confirmed', advance_paid:adv, remaining_amount:remaining, total_amount:total} : b));
+      await createNotification({
+        userId: advanceTarget.customer_id,
+        type: 'booking_confirmed',
+        message: `Your booking at 43C is confirmed! Date: ${advanceTarget.booking_date}, Slots: ${formatSlotsDisplay(advanceTarget.slots)}, Guests: ${advanceTarget.guest_count}. Remaining to pay on arrival: ₹${remaining}. Enjoy your cinematic experience!`,
+        bookingId: advanceTarget.id,
+      });
+      sendBookingConfirmedWhatsApp({
+        customerMobile: advanceTarget.customer_mobile,
+        customerName: advanceTarget.customer_name,
+        slots: advanceTarget.slots,
+        date: advanceTarget.booking_date,
+        guests: advanceTarget.guest_count,
+        totalAmount: total,
+        advancePaid: adv,
+      });
+    } catch(e) { alert('Failed: '+e.message); }
+    setShowAdvanceModal(false);
+  };
+
+  // Update notification bell counts
+  const refreshNotifCounts = (bkList, foList) => {
+    setNotifCount({
+      bookings: (bkList||bookings).filter(b => b.status==='pending').length,
+      orders: (foList||foodOrders).filter(o => o.status==='pending').length,
+    });
+  };
+
+  // Update order status with notification
+  const updateOrderStatusWithNotif = async (id, status) => {
+    const o = foodOrders.find(x => x.id===id);
+    await updateDoc(doc(db,'food_orders',id),{status});
+    const updated = foodOrders.map(x => x.id===id ? {...x,status} : x);
+    setFoodOrders(updated);
+    refreshNotifCounts(null, updated);
+    if (!o) return;
+    let msg = '';
+    if (status==='confirmed') msg = `Your food order is confirmed and being prepared! Order #${id.slice(0,6)}.`;
+    if (status==='served') msg = `Your order has been served. Enjoy! 🎉 Order #${id.slice(0,6)}.`;
+    if (msg) await createNotification({ userId: o.customer_id, type:`food_${status}`, message: msg, orderId: id });
+  };
+
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
   const navItems = [
@@ -312,7 +432,16 @@ const AdminDashboard = () => {
       <div className="w-64 bg-[#05071A]/90 backdrop-blur-2xl border-r border-[#D4A95F]/10 p-6 space-y-8 shrink-0 flex flex-col h-screen sticky top-0">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center text-primary font-bold text-lg">43</div>
-          <div><h1 className="text-lg font-heading gold-text-gradient font-black">Control</h1><p className="text-[8px] uppercase tracking-[0.3em] text-white/30">Admin Panel</p></div>
+          <div className="flex-1"><h1 className="text-lg font-heading gold-text-gradient font-black">Control</h1><p className="text-[8px] uppercase tracking-[0.3em] text-white/30">Admin Panel</p></div>
+          {/* Notification Bell */}
+          <button onClick={()=>setView('bookings')} className="relative p-2 hover:bg-white/5 rounded-lg transition-colors">
+            <Bell size={18} className={notifCount.bookings+notifCount.orders>0 ? 'text-accent' : 'text-white/20'}/>
+            {(notifCount.bookings+notifCount.orders)>0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+                {notifCount.bookings+notifCount.orders}
+              </span>
+            )}
+          </button>
         </div>
         <nav className="space-y-1 flex-1">
           {navItems.map(item=>(
@@ -359,31 +488,64 @@ const AdminDashboard = () => {
           )}
 
           {/* ─── BOOKINGS ─── */}
-          {view==='bookings' && (
+          {view==='bookings' && (() => {
+            const filtered = bookings.filter(b => {
+              if (filterStatus !== 'all' && b.status !== filterStatus) return false;
+              if (filterDate && b.booking_date !== filterDate) return false;
+              return true;
+            });
+            return (
             <motion.div key="bk" initial={{opacity:0}} animate={{opacity:1}} className="space-y-6">
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <h2 className="text-3xl font-heading">Reservations <span className="gold-text-gradient italic">Manifest</span></h2>
                 <button onClick={()=>setShowBookingModal(true)} className="gold-button !px-5 !py-2.5 !text-xs flex items-center gap-2"><Plus size={14}/>Manual Book</button>
               </div>
+              {/* Filters */}
+              <div className="flex flex-wrap gap-3 items-center glass-card p-4">
+                <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} className="bg-white/5 border border-white/10 text-white text-xs rounded-lg px-3 py-2 outline-none">
+                  <option value="all" className="bg-[#05071A]">All Statuses</option>
+                  {BOOKING_STATUSES.map(s=><option key={s} value={s} className="bg-[#05071A]">{s}</option>)}
+                </select>
+                <input type="date" value={filterDate} onChange={e=>setFilterDate(e.target.value)} className="bg-white/5 border border-white/10 text-white text-xs rounded-lg px-3 py-2 outline-none" />
+                {filterDate && <button onClick={()=>setFilterDate('')} className="text-[9px] text-red-400 border border-red-500/20 px-2 py-1 rounded-lg">Clear Date</button>}
+                <span className="text-[10px] text-white/30 ml-auto">{filtered.length} bookings</span>
+              </div>
               <div className="space-y-3">
-                {bookings.map(b=>(
+                {filtered.map(b=>{
+                  const wa = editWaMobile[b.id] ?? b.customer_mobile;
+                  return (
                   <div key={b.id} className="glass-card p-5">
                     <div className="flex flex-col md:flex-row justify-between gap-4">
                       <div className="flex-1">
                         <p className="text-accent text-[10px] font-black tracking-widest uppercase mb-1">#{b.id.slice(0,8)}</p>
                         <p className="font-bold">{b.customer_name} <span className="text-white/30 font-normal text-sm">· {b.customer_mobile}</span></p>
-                        <p className="text-sm text-white/50 mt-1">{b.booking_date} · {b.screen||'Screen 1'} · {formatSlotsDisplay(b.slots)}</p>
+                        <p className="text-sm text-white/50 mt-1">{b.booking_date} · {b.screen||'Screen 1'} · {formatSlotsDisplay(b.slots)} · {b.guest_count} guests</p>
+                        <div className="flex items-center gap-3 mt-2 flex-wrap">
+                          <p className="text-[10px] text-white/30">Total: ₹{b.final_price||b.price}</p>
+                          {b.advance_paid!=null && <p className="text-[10px] text-green-400">Adv: ₹{b.advance_paid}</p>}
+                          {b.remaining_amount!=null && <p className="text-[10px] text-yellow-400">Due: ₹{b.remaining_amount}</p>}
+                          {b.cancel_reason && <p className="text-[10px] text-red-400">Reason: {b.cancel_reason}</p>}
+                        </div>
+                        {/* Editable WhatsApp number */}
                         <div className="flex items-center gap-2 mt-2">
-                          <p className="text-[10px] text-white/30">Original: ₹{b.original_price||b.price}</p>
-                          <p className="text-sm font-bold text-accent">Final: ₹{b.final_price||b.price}</p>
+                          <input type="tel" value={wa} onChange={e=>setEditWaMobile(p=>({...p,[b.id]:e.target.value}))}
+                            className="bg-white/5 border border-white/10 text-white text-[10px] rounded-lg px-2 py-1 w-32 outline-none focus:border-accent" placeholder="WhatsApp No." maxLength={10}/>
+                          <button onClick={()=>openAdminWhatsApp({ customerMobile:wa, customerName:b.customer_name, slots:b.slots||[], date:b.booking_date, guests:b.guest_count, totalAmount:b.final_price||b.price||0 })}
+                            className="flex items-center gap-1 text-[9px] bg-green-500/20 text-green-400 border border-green-500/30 px-2 py-1 rounded-lg font-black uppercase">
+                            <Phone size={10}/> WhatsApp
+                          </button>
                         </div>
                       </div>
                       <div className="flex flex-col gap-2 items-end justify-center">
                         <StatusBadge s={b.status||'pending'}/>
-                        <select value={b.status||'pending'} onChange={e=>updateBookingStatus(b.id,e.target.value)}
-                          className="bg-white/5 border border-white/10 text-white text-xs rounded-lg px-3 py-1.5 outline-none">
-                          {BOOKING_STATUSES.map(s=><option key={s} value={s} className="bg-[#05071A]">{s}</option>)}
-                        </select>
+                        {b.status==='pending' && (
+                          <button onClick={()=>openAdvanceModal(b)} className="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-3 py-1.5 rounded-lg font-black uppercase">
+                            Confirm + Advance
+                          </button>
+                        )}
+                        {b.status!=='cancelled' && b.status!=='completed' && (
+                          <button onClick={()=>openCancelModal(b.id,'booking')} className="text-[9px] bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-lg font-black uppercase">Cancel</button>
+                        )}
                         <div className="flex items-center gap-2">
                           {editPrice[b.id]!==undefined
                             ? <><input type="number" className="bg-white/5 border border-accent/40 text-white text-xs rounded-lg px-2 py-1 w-24 outline-none" value={editPrice[b.id]} onChange={e=>setEditPrice(p=>({...p,[b.id]:e.target.value}))}/>
@@ -395,10 +557,11 @@ const AdminDashboard = () => {
                       </div>
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             </motion.div>
-          )}
+            );
+          })()}
 
           {/* ─── SLOT CONTROL ─── */}
           {view==='slots' && (
@@ -448,14 +611,18 @@ const AdminDashboard = () => {
                         <div className="flex items-center gap-2 mt-2">
                           <p className="text-[10px] text-white/30">Original: ₹{o.original_price||o.total}</p>
                           <p className="text-sm font-bold text-accent">Final: ₹{o.final_price||o.total}</p>
+                          {o.cancel_reason && <p className="text-[10px] text-red-400">Reason: {o.cancel_reason}</p>}
                         </div>
                       </div>
                       <div className="flex flex-col gap-2 items-end justify-center">
                         <StatusBadge s={o.status||'pending'}/>
-                        <select value={o.status||'pending'} onChange={e=>updateOrderStatus(o.id,e.target.value)}
+                        <select value={o.status||'pending'} onChange={e=>updateOrderStatusWithNotif(o.id,e.target.value)}
                           className="bg-white/5 border border-white/10 text-white text-xs rounded-lg px-3 py-1.5 outline-none">
                           {ORDER_STATUSES.map(s=><option key={s} value={s} className="bg-[#05071A]">{s}</option>)}
                         </select>
+                        {o.status!=='cancelled' && o.status!=='served' && (
+                          <button onClick={()=>openCancelModal(o.id,'order')} className="text-[9px] bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-lg font-black uppercase">Cancel</button>
+                        )}
                         <div className="flex items-center gap-2">
                           {editPrice['o_'+o.id]!==undefined
                             ? <><input type="number" className="bg-white/5 border border-accent/40 text-white text-xs rounded-lg px-2 py-1 w-24 outline-none" value={editPrice['o_'+o.id]} onChange={e=>setEditPrice(p=>({...p,['o_'+o.id]:e.target.value}))}/>
@@ -600,6 +767,37 @@ const AdminDashboard = () => {
                   </tbody>
                 </table>
               </div>
+
+              {/* Top Performers */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                <div className="glass-card p-6">
+                  <h3 className="text-sm font-black uppercase tracking-widest text-accent mb-4">Top Slots</h3>
+                  {analyticsData.topSlots && analyticsData.topSlots.length > 0 ? (
+                    <div className="space-y-3">
+                      {analyticsData.topSlots.map((ts, i) => (
+                        <div key={i} className="flex justify-between items-center text-sm p-3 bg-white/5 rounded-lg border border-white/10">
+                          <span className="font-bold">{ts.name}</span>
+                          <span className="text-white/50 text-[10px] uppercase font-black">{ts.count} Bookings</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p className="text-white/30 text-xs">No slot data available.</p>}
+                </div>
+                <div className="glass-card p-6">
+                  <h3 className="text-sm font-black uppercase tracking-widest text-accent mb-4">Top Food Items</h3>
+                  {analyticsData.topFood && analyticsData.topFood.length > 0 ? (
+                    <div className="space-y-3">
+                      {analyticsData.topFood.map((tf, i) => (
+                        <div key={i} className="flex justify-between items-center text-sm p-3 bg-white/5 rounded-lg border border-white/10">
+                          <span className="font-bold">{tf.name}</span>
+                          <span className="text-white/50 text-[10px] uppercase font-black">{tf.count} Orders</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p className="text-white/30 text-xs">No food data available.</p>}
+                </div>
+              </div>
+
             </motion.div>
           )}
 
@@ -763,6 +961,57 @@ const AdminDashboard = () => {
               <input type="text" required placeholder="Password" minLength="6" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm" value={adminForm.password} onChange={e=>setAdminForm({...adminForm,password:e.target.value})}/>
               <button className="gold-button w-full py-4 !text-[10px] uppercase font-black">Grant Access</button>
             </form>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Cancel Modal */}
+      {showCancelModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={()=>setShowCancelModal(false)}/>
+          <motion.div initial={{scale:0.9,opacity:0}} animate={{scale:1,opacity:1}} className="glass-card !bg-[#05071A] p-8 max-w-md w-full relative z-10 border-red-500/20 space-y-5">
+            <h3 className="text-2xl font-heading text-red-400">Cancel {cancelTarget?.type==='booking' ? 'Booking' : 'Order'}</h3>
+            <p className="text-sm text-white/40">Please provide a reason for cancellation. This will be sent to the customer.</p>
+            <div className="space-y-4">
+              <textarea rows={3} value={cancelReason} onChange={e=>setCancelReason(e.target.value)}
+                placeholder="Enter cancellation reason..."
+                className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-red-400 text-sm resize-none"/>
+              <div className="flex gap-3">
+                <button onClick={()=>setShowCancelModal(false)} className="flex-1 py-3 rounded-xl border border-white/10 text-white/40 text-[10px] uppercase font-black">Back</button>
+                <button onClick={confirmCancel} className="flex-1 bg-red-500/20 text-red-400 border border-red-500/30 py-3 rounded-xl font-black uppercase tracking-widest text-[10px]">Confirm Cancel</button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Advance Payment Modal */}
+      {showAdvanceModal && advanceTarget && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={()=>setShowAdvanceModal(false)}/>
+          <motion.div initial={{scale:0.9,opacity:0}} animate={{scale:1,opacity:1}} className="glass-card !bg-[#05071A] p-8 max-w-md w-full relative z-10 border-accent/20 space-y-5">
+            <h3 className="text-2xl font-heading gold-text-gradient">Confirm Booking</h3>
+            <div className="bg-white/5 rounded-xl p-4 space-y-2 border border-white/10">
+              <p className="font-bold">{advanceTarget.customer_name}</p>
+              <p className="text-sm text-white/50">{advanceTarget.booking_date} · {formatSlotsDisplay(advanceTarget.slots)} · {advanceTarget.guest_count} guests</p>
+              <p className="text-accent font-bold">Total: ₹{advanceTarget.final_price||advanceTarget.price}</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Advance Amount Paid (₹)</label>
+              <input type="number" value={advanceAmount} onChange={e=>setAdvanceAmount(e.target.value)}
+                placeholder={`Min 50% = ₹${Math.ceil((advanceTarget.final_price||advanceTarget.price||0)*0.5)}`}
+                className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-xl font-heading text-center"/>
+              {advanceAmount && !isNaN(advanceAmount) && (
+                <p className="text-[10px] text-white/40 text-center">
+                  Remaining on arrival: ₹{(advanceTarget.final_price||advanceTarget.price||0) - Number(advanceAmount)}
+                </p>
+              )}
+            </div>
+            <p className="text-[9px] text-white/30 text-center">Customer will receive a WhatsApp message with payment details.</p>
+            <div className="flex gap-3">
+              <button onClick={()=>setShowAdvanceModal(false)} className="flex-1 py-3 rounded-xl border border-white/10 text-white/40 text-[10px] uppercase font-black">Back</button>
+              <button onClick={confirmAdvancePayment} className="flex-1 gold-button !py-3 !text-[10px] font-black uppercase tracking-widest text-wrap leading-tight">Confirm & Send WhatsApp</button>
+            </div>
           </motion.div>
         </div>
       )}

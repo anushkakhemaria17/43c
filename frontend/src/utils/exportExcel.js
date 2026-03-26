@@ -28,7 +28,7 @@ export const exportAnalyticsExcel = (rows, bookingDetails, foodDetails, monthLab
   XLSX.utils.book_append_sheet(wb, summaryWs, 'Monthly Summary');
 
   // ─── Sheet 2: Booking Details ───
-  const bookingHeaders = ['Booking ID', 'Date', 'Customer', 'Slots', 'Guests', 'Original Price (₹)', 'Final Price (₹)', 'Status'];
+  const bookingHeaders = ['Booking ID', 'Date', 'Customer', 'Slots', 'Guests', 'Original Price (₹)', 'Final Price (₹)', 'Advance Paid (₹)', 'Remaining Amount (₹)', 'Status'];
   const bookingRows = bookingDetails.map(b => [
     b.id,
     b.booking_date,
@@ -37,10 +37,12 @@ export const exportAnalyticsExcel = (rows, bookingDetails, foodDetails, monthLab
     b.guest_count,
     b.original_price || b.price || 0,
     b.final_price || b.price || 0,
+    b.advance_paid || 0,
+    b.remaining_amount || (b.final_price || b.price || 0),
     b.status || '-',
   ]);
   const bookingWs = XLSX.utils.aoa_to_sheet([bookingHeaders, ...bookingRows]);
-  bookingWs['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 20 }, { wch: 30 }, { wch: 8 }, { wch: 18 }, { wch: 14 }, { wch: 12 }];
+  bookingWs['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 20 }, { wch: 30 }, { wch: 8 }, { wch: 18 }, { wch: 14 }, { wch: 16 }, { wch: 20 }, { wch: 12 }];
   XLSX.utils.book_append_sheet(wb, bookingWs, 'Bookings');
 
   // ─── Sheet 3: Food Order Details ───
