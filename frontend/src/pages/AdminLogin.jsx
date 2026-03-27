@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { db } from '../lib/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
+import logo43c from '../assets/43C.png';
 
 const AdminLogin = () => {
   const navigate = useNavigate();
@@ -13,46 +14,29 @@ const AdminLogin = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    if (localStorage.getItem('admin_access') === 'true') {
+      navigate('/admin');
+    }
+  }, [navigate]);
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    
     try {
-      // Hardware-coded main admin account fallback
       if (mobile === '9479810400' && password === '43cadmin') {
         localStorage.setItem('admin_access', 'true');
-        const redirectUrl = localStorage.getItem('redirect_after_login');
-        if (redirectUrl) {
-          localStorage.removeItem('redirect_after_login');
-          navigate(redirectUrl);
-          window.location.reload();
-        } else {
-          navigate('/admin');
-          window.location.reload();
-        }
+        localStorage.setItem('admin_name', 'Super Admin');
+        navigate('/admin');
         return;
       }
-
-      // Check database for dynamically added admins
-      const q = query(
-        collection(db, 'admins'),
-        where('mobile', '==', mobile),
-        where('password', '==', password)
-      );
+      const q = query(collection(db, 'admins'), where('mobile', '==', mobile), where('password', '==', password));
       const snap = await getDocs(q);
-
       if (!snap.empty) {
         localStorage.setItem('admin_access', 'true');
-        const redirectUrl = localStorage.getItem('redirect_after_login');
-        if (redirectUrl) {
-          localStorage.removeItem('redirect_after_login');
-          navigate(redirectUrl);
-          window.location.reload();
-        } else {
-          navigate('/admin');
-          window.location.reload();
-        }
+        localStorage.setItem('admin_name', snap.docs[0].data().name || 'Admin');
+        navigate('/admin');
       } else {
         throw new Error('Invalid credentials.');
       }
@@ -66,14 +50,16 @@ const AdminLogin = () => {
   return (
     <div className="min-h-screen luxury-bg flex items-center justify-center px-4">
       <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
-        <div className="glass-card p-12 relative overflow-hidden">
+        <div className="glass-card p-10 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-accent to-transparent opacity-60"></div>
-          
           <div className="text-center mb-10">
-            <div className="w-16 h-16 bg-accent/10 border border-accent/30 rounded-2xl flex items-center justify-center mx-auto mb-6">
-              <Shield className="w-8 h-8 text-accent" />
-            </div>
-            <h1 className="text-4xl font-heading gold-text-gradient font-black mb-2">Control Panel</h1>
+            <img
+              src={logo43c}
+              alt="43C"
+              className="h-16 mx-auto mb-4 object-contain"
+              onError={e => { e.target.style.display = 'none'; }}
+            />
+            <h1 className="text-3xl font-heading gold-text-gradient font-black mb-1">Control Panel</h1>
             <p className="text-[10px] uppercase tracking-[0.3em] text-white/30">Executive Access</p>
           </div>
 
@@ -83,11 +69,11 @@ const AdminLogin = () => {
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-6">
+          <form onSubmit={handleLogin} className="space-y-5">
             <div className="space-y-2">
               <label className="text-[9px] uppercase tracking-[0.2em] text-accent/60 font-black">Mobile Number</label>
               <input
-                type="tel" required placeholder="Mobile"
+                type="tel" required placeholder="10-digit mobile"
                 className="w-full bg-white/5 border border-white/10 p-4 rounded-xl focus:border-accent outline-none transition-all text-white"
                 value={mobile} onChange={e => setMobile(e.target.value)}
               />
@@ -110,7 +96,7 @@ const AdminLogin = () => {
             </button>
           </form>
 
-          <p className="text-center text-white/10 text-[9px] mt-8 uppercase tracking-widest flex justify-center gap-4">
+          <p className="text-center text-white/10 text-[9px] mt-8 uppercase tracking-widest">
             <button onClick={() => navigate('/')} className="hover:text-accent font-bold">Return to Main Site</button>
           </p>
         </div>

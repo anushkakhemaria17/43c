@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { collection, getDocs, addDoc, query, where, serverTimestamp, doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
-import { LayoutDashboard, Calendar, Users, Wallet, Plus, Clock, UtensilsCrossed, Coffee, CheckCircle2, Lock, X, Settings, Shield, BarChart2, MessageCircle, Bell, Phone } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { db, storage } from '../lib/firebase';
+import { collection, getDocs, addDoc, query, where, serverTimestamp, doc, updateDoc, deleteDoc, setDoc, onSnapshot, orderBy } from 'firebase/firestore';
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { LayoutDashboard, Calendar, Users, Wallet, Plus, Clock, UtensilsCrossed, Coffee, CheckCircle2, Lock, X, Settings, Shield, BarChart2, MessageCircle, Bell, Phone, Trash2, Monitor, Upload, ImageIcon, ClipboardList, CheckSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SLOT_HOURS, getSlotLabel, getAvailableDates, getSlotStatusMap, formatSlotsDisplay, getTodayStr } from '../utils/slots';
 import { exportAnalyticsExcel } from '../utils/exportExcel';
-import { createNotification, autoCompleteBookings, openAdminWhatsApp, sendBookingConfirmedWhatsApp } from '../utils/firebaseHelpers';
+import { createNotification, autoCompleteBookings, autoCancelPendingBookings, openAdminWhatsApp, sendBookingConfirmedWhatsApp } from '../utils/firebaseHelpers';
+import AdminNotificationBell from '../components/AdminNotificationBell';
+import logo43c from '../assets/43C.png';
 
 const BOOKING_STATUSES = ['pending','confirmed','completed','cancelled'];
 const ORDER_STATUSES   = ['pending','confirmed','served','cancelled'];
@@ -16,6 +19,12 @@ const StatusBadge = ({ s }) => {
 };
 
 const AdminDashboard = () => {
+  // Auth guard
+  if (localStorage.getItem('admin_access') !== 'true') {
+    window.location.href = '/admin-login';
+    return null;
+  }
+
   const [view, setView] = useState('overview');
   const [loading, setLoading] = useState(false);
   const [analytics, setAnalytics] = useState(null);
@@ -50,6 +59,17 @@ const AdminDashboard = () => {
   const [showMenuModal, setShowMenuModal] = useState(false);
   const [menuForm, setMenuForm] = useState({ id:'', name:'', category:'Drinks', member_price:'', non_member_price:'', image_url:'' });
   const [isEditingMenu, setIsEditingMenu] = useState(false);
+  // Menu image upload state
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
+  const [imageUploading, setImageUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const fileInputRef = useRef(null);
+  // Menu category management
+  const [menuCategories, setMenuCategories] = useState(['Drinks','Snacks','Main Course','Desserts','Shisha']);
+  const [newCategory, setNewCategory] = useState('');
+  const [showAddCategory, setShowAddCategory] = useState(false);
+  const [menuCatFilter, setMenuCatFilter] = useState('All');
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminForm, setAdminForm] = useState({ name:'', mobile:'', password:'' });
 
@@ -65,6 +85,60 @@ const AdminDashboard = () => {
   const [editWaMobile, setEditWaMobile] = useState({});
   const [notifCount, setNotifCount] = useState({ bookings: 0, orders: 0 });
 
+  const [memberFilter, setMemberFilter] = useState('all'); // all | gold | silver | non_member
+  const [memberBookings, setMemberBookings] = useState({}); // customerId -> count
+  const [memberSpend, setMemberSpend] = useState({});    // customerId -> total spend
+  const [showDueModal, setShowDueModal] = useState(false);
+  const [dueTarget, setDueTarget] = useState(null);
+  const [dueAmount, setDueAmount] = useState('');
+  const [newScreenName, setNewScreenName] = useState('');
+  const [screens, setScreens] = useState(['Screen 1', 'Screen 2', 'TV Screen']);
+
+  // Task manager state
+  const [tasks, setTasks] = useState([]);
+  const [taskForm, setTaskForm] = useState({ title: '', time: '10:00' });
+  const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
+  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
+  const [selectedTaskDate, setSelectedTaskDate] = useState(getTodayStr());
+
+  const fetchTasks = async () => {
+    try {
+      const snap = await getDocs(collection(db, 'tasks'));
+      setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch(e) { console.error(e); }
+  };
+
+  const addTask = async (e) => {
+    e.preventDefault();
+    if (!taskForm.title.trim()) return;
+    try {
+      const docRef = await addDoc(collection(db, 'tasks'), {
+        title: taskForm.title.trim(),
+        date: selectedTaskDate,
+        time: taskForm.time,
+        completed: false,
+        created_at: serverTimestamp()
+      });
+      setTasks([...tasks, { id: docRef.id, title: taskForm.title.trim(), date: selectedTaskDate, time: taskForm.time, completed: false }]);
+      setTaskForm({ title: '', time: '10:00' });
+    } catch(err) { alert('Failed: ' + err.message); }
+  };
+
+  const toggleTask = async (id, currentStatus) => {
+    try {
+      await updateDoc(doc(db, 'tasks', id), { completed: !currentStatus });
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !currentStatus } : t));
+    } catch(err) { alert('Failed'); }
+  };
+
+  const deleteTask = async (id) => {
+    if (!window.confirm('Delete this task?')) return;
+    try {
+      await deleteDoc(doc(db, 'tasks', id));
+      setTasks(prev => prev.filter(t => t.id !== id));
+    } catch(err) { alert('Failed'); }
+  };
+
   useEffect(() => {
     if (view==='overview') fetchAnalytics();
     if (view==='bookings') fetchAllBookings();
@@ -73,9 +147,9 @@ const AdminDashboard = () => {
     if (view==='expenses') fetchExpenses();
     if (view==='menu') fetchMenu();
     if (view==='orders') fetchFoodOrders();
-    if (view==='admins') fetchAdmins();
     if (view==='analytics') fetchAnalyticsView();
     if (view==='settings') fetchSettings();
+    if (view==='tasks') { fetchTasks(); fetchAllBookings(); }
   }, [view, slotDate, slotScreen]);
 
   useEffect(() => { if (view==='analytics') fetchAnalyticsView(); }, [analyticsMonth, analyticsYear]);
@@ -86,10 +160,11 @@ const AdminDashboard = () => {
       const snap = await getDocs(collection(db,'settings'));
       const globals = snap.docs.find(d=>d.id==='global');
       if (globals) { setWaNumber(globals.data().whatsapp_number||'9479810400'); setWaInput(globals.data().whatsapp_number||'9479810400'); }
-
       const pSnap = await getDocs(collection(db,'pricing'));
       if(!pSnap.empty && pSnap.docs[0].data().screens) {
-         setPricingMap(pSnap.docs[0].data().screens);
+         const loadedMap = pSnap.docs[0].data().screens;
+         setPricingMap(loadedMap);
+         setScreens(Object.keys(loadedMap));
       }
     } catch(e){ console.error(e); }
   };
@@ -185,9 +260,21 @@ const AdminDashboard = () => {
     try {
       const snap = await getDocs(collection(db,'bookings'));
       const raw = snap.docs.map(d=>({id:d.id,...d.data()}));
-      raw.sort((a,b)=>b.booking_date<a.booking_date?-1:1);
+      // Sort: pending first (oldest), then others by date desc
+      raw.sort((a,b) => {
+        if (a.status==='pending' && b.status!=='pending') return -1;
+        if (b.status==='pending' && a.status!=='pending') return 1;
+        if (a.status==='pending' && b.status==='pending') {
+          return (a.created_at?.seconds||0) - (b.created_at?.seconds||0);
+        }
+        return b.booking_date < a.booking_date ? -1 : 1;
+      });
       setBookings(raw);
+      setFilterStatus('pending'); // default to pending
       await autoCompleteBookings(raw, (id, status) =>
+        setBookings(prev => prev.map(b => b.id===id ? {...b, status} : b))
+      );
+      await autoCancelPendingBookings(raw, (id, status) =>
         setBookings(prev => prev.map(b => b.id===id ? {...b, status} : b))
       );
       setNotifCount(prev => ({...prev, bookings: raw.filter(b=>b.status==='pending').length}));
@@ -215,8 +302,19 @@ const AdminDashboard = () => {
     try {
       const cSnap = await getDocs(collection(db,'customers'));
       const memSnap = await getDocs(query(collection(db,'memberships'),where('status','==','active')));
-      const memIds = memSnap.docs.map(d=>d.data().customer_id);
-      setCustomers(cSnap.docs.map(d=>({id:d.id,...d.data(),is_member:memIds.includes(d.id)})));
+      const memMap = {};
+      memSnap.docs.forEach(d => { memMap[d.data().customer_id] = d.data().membership_type || 'silver'; });
+      const bSnap = await getDocs(collection(db,'bookings'));
+      const bkMap = {}; const spMap = {};
+      bSnap.docs.forEach(d => {
+        const bd = d.data();
+        if (!bkMap[bd.customer_id]) { bkMap[bd.customer_id] = 0; spMap[bd.customer_id] = 0; }
+        bkMap[bd.customer_id]++;
+        spMap[bd.customer_id] += (bd.final_price||bd.price||0);
+      });
+      setMemberBookings(bkMap);
+      setMemberSpend(spMap);
+      setCustomers(cSnap.docs.map(d=>({id:d.id,...d.data(),membership_type:memMap[d.id]||'non_member',is_member:!!memMap[d.id]})));
     } catch(e){ console.error(e); }
   };
 
@@ -229,7 +327,16 @@ const AdminDashboard = () => {
   };
 
   const fetchMenu = async () => {
-    try { const snap=await getDocs(collection(db,'menu_items')); setMenuItems(snap.docs.map(d=>({id:d.id,...d.data()}))); } catch(e){ console.error(e); }
+    try { 
+      const snap = await getDocs(collection(db,'menu_items')); 
+      setMenuItems(snap.docs.map(d=>({id:d.id,...d.data()}))); 
+      
+      const catSnap = await getDocs(collection(db,'settings'));
+      const catDoc = catSnap.docs.find(d => d.id === 'menu_categories');
+      if (catDoc && catDoc.data().categories) {
+        setMenuCategories(catDoc.data().categories);
+      }
+    } catch(e){ console.error(e); }
   };
 
   const fetchFoodOrders = async () => {
@@ -291,30 +398,91 @@ const AdminDashboard = () => {
     } catch(e){ alert('Failed: '+e.message); }
   };
 
+  // Upload image file to Firebase Storage and return download URL
+  const uploadMenuImage = (file) => new Promise((resolve, reject) => {
+    const ext = file.name.split('.').pop();
+    const path = `menu_images/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    const sRef = storageRef(storage, path);
+    const task = uploadBytesResumable(sRef, file);
+    task.on('state_changed',
+      (snap) => setUploadProgress(Math.round(snap.bytesTransferred / snap.totalBytes * 100)),
+      reject,
+      () => getDownloadURL(task.snapshot.ref).then(resolve).catch(reject)
+    );
+  });
+
+  const handleImageSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return alert('Please select an image file.');
+    if (file.size > 5 * 1024 * 1024) return alert('Image must be under 5MB.');
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
   const saveMenu = async (e) => {
     e.preventDefault();
     try {
+      let imageUrl = menuForm.image_url;
+      // Upload new image if selected
+      if (imageFile) {
+        setImageUploading(true);
+        setUploadProgress(0);
+        imageUrl = await uploadMenuImage(imageFile);
+        setImageUploading(false);
+      }
       if(isEditingMenu) {
         await updateDoc(doc(db,'menu_items',menuForm.id), {
           name: menuForm.name,
           category: menuForm.category,
           member_price: Number(menuForm.member_price),
           non_member_price: Number(menuForm.non_member_price),
-          image_url: menuForm.image_url
+          image_url: imageUrl
         });
       } else {
-        await addDoc(collection(db,'menu_items'),{...menuForm,member_price:Number(menuForm.member_price),non_member_price:Number(menuForm.non_member_price),available:true,created_at:serverTimestamp()});
+        await addDoc(collection(db,'menu_items'),{
+          ...menuForm,
+          image_url: imageUrl,
+          member_price: Number(menuForm.member_price),
+          non_member_price: Number(menuForm.non_member_price),
+          available: true,
+          created_at: serverTimestamp(),
+        });
       }
       setShowMenuModal(false);
-      setMenuForm({id:'', name:'',category:'Drinks',member_price:'',non_member_price:'',image_url:''});
+      setMenuForm({id:'', name:'', category: menuCategories[0]||'Drinks', member_price:'', non_member_price:'', image_url:''});
+      setImageFile(null); setImagePreview(''); setUploadProgress(0);
       setIsEditingMenu(false);
       fetchMenu();
-    } catch(e){ alert('Failed: '+e.message); }
+    } catch(err) {
+      setImageUploading(false);
+      alert('Failed: ' + err.message);
+    }
   };
 
   const deleteMenu = async (id) => {
     if(!window.confirm('Delete this item?')) return;
     try { await deleteDoc(doc(db,'menu_items',id)); fetchMenu(); } catch(e){ alert('Failed'); }
+  };
+
+  // Save categories to Firestore so they persist
+  const saveCategory = async () => {
+    const cat = newCategory.trim();
+    if (!cat) return;
+    if (menuCategories.includes(cat)) return alert('Category already exists.');
+    const updated = [...menuCategories, cat];
+    setMenuCategories(updated);
+    setNewCategory('');
+    setShowAddCategory(false);
+    try { await setDoc(doc(db,'settings','menu_categories'), { categories: updated }); } catch(e) { /* ignore */ }
+  };
+
+  const deleteCategory = async (cat) => {
+    const inUse = menuItems.some(m => m.category === cat);
+    if (inUse) return alert(`Cannot delete "${cat}" — it has menu items. Reassign them first.`);
+    const updated = menuCategories.filter(c => c !== cat);
+    setMenuCategories(updated);
+    try { await setDoc(doc(db,'settings','menu_categories'), { categories: updated }); } catch(e) { /* ignore */ }
   };
 
   const logExpense = async (e) => {
@@ -406,15 +574,33 @@ const AdminDashboard = () => {
     refreshNotifCounts(null, updated);
     if (!o) return;
     let msg = '';
-    if (status==='confirmed') msg = `Your food order is confirmed and being prepared! Order #${id.slice(0,6)}.`;
-    if (status==='served') msg = `Your order has been served. Enjoy! 🎉 Order #${id.slice(0,6)}.`;
+    if (status==='confirmed') msg = `✅ Your food order is confirmed and being prepared! Order #${id.slice(0,6)}.`;
+    if (status==='served') msg = `🎉 Your order has been served. Enjoy! Order #${id.slice(0,6)}.`;
     if (msg) await createNotification({ userId: o.customer_id, type:`food_${status}`, message: msg, orderId: id });
+  };
+
+  // Due amount for completed bookings
+  const openDueModal = (booking) => { setDueTarget(booking); setDueAmount(''); setShowDueModal(true); };
+  const saveDueAmount = async () => {
+    if (!dueAmount || isNaN(dueAmount)) return alert('Enter valid amount.');
+    const finalPaid = Number(dueAmount);
+    try {
+      await updateDoc(doc(db,'bookings', dueTarget.id), {
+        status: 'completed',
+        final_paid: finalPaid,
+        remaining_amount: Math.max(0, (dueTarget.final_price||dueTarget.price||0) - (dueTarget.advance_paid||0) - finalPaid),
+      });
+      setBookings(prev => prev.map(b => b.id===dueTarget.id ? {...b, status:'completed', final_paid:finalPaid} : b));
+      await createNotification({ userId: dueTarget.customer_id, type:'booking_completed', message:`Your visit is complete! Thank you for visiting 43C. Total paid: ₹${(dueTarget.advance_paid||0)+finalPaid}`, bookingId: dueTarget.id });
+    } catch(e) { alert('Failed'); }
+    setShowDueModal(false);
   };
 
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
   const navItems = [
     {id:'overview',icon:<LayoutDashboard size={18}/>,label:'Overview'},
+    {id:'tasks',icon:<ClipboardList size={18}/>,label:'Tasks / Calendar'},
     {id:'bookings',icon:<Calendar size={18}/>,label:'Bookings'},
     {id:'slots',icon:<Clock size={18}/>,label:'Slot Control'},
     {id:'orders',icon:<UtensilsCrossed size={18}/>,label:'Food Orders'},
@@ -426,28 +612,29 @@ const AdminDashboard = () => {
     {id:'admins',icon:<Lock size={18}/>,label:'Admins'},
   ];
 
+  const adminName = localStorage.getItem('admin_name') || 'Admin';
+
   return (
     <div className="flex min-h-screen luxury-bg mesh-pattern relative">
       {/* Sidebar */}
-      <div className="w-64 bg-[#05071A]/90 backdrop-blur-2xl border-r border-[#D4A95F]/10 p-6 space-y-8 shrink-0 flex flex-col h-screen sticky top-0">
+      <div className="w-56 lg:w-64 bg-[#05071A]/90 backdrop-blur-2xl border-r border-[#D4A95F]/10 p-4 lg:p-6 space-y-6 shrink-0 flex flex-col h-screen sticky top-0">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center text-primary font-bold text-lg">43</div>
-          <div className="flex-1"><h1 className="text-lg font-heading gold-text-gradient font-black">Control</h1><p className="text-[8px] uppercase tracking-[0.3em] text-white/30">Admin Panel</p></div>
-          {/* Notification Bell */}
-          <button onClick={()=>setView('bookings')} className="relative p-2 hover:bg-white/5 rounded-lg transition-colors">
-            <Bell size={18} className={notifCount.bookings+notifCount.orders>0 ? 'text-accent' : 'text-white/20'}/>
-            {(notifCount.bookings+notifCount.orders)>0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center">
-                {notifCount.bookings+notifCount.orders}
-              </span>
-            )}
-          </button>
+          <img src={logo43c} alt="43C" className="h-8 w-8 object-contain rounded-lg" onError={e => e.target.style.display='none'} />
+          <div className="flex-1 min-w-0">
+            <h1 className="text-sm font-heading gold-text-gradient font-black truncate">Control</h1>
+            <p className="text-[8px] uppercase tracking-[0.3em] text-white/30">Admin Panel</p>
+          </div>
+          <AdminNotificationBell onNavigate={setView} />
         </div>
         <nav className="space-y-1 flex-1">
           {navItems.map(item=>(
             <button key={item.id} onClick={()=>setView(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm ${view===item.id?'bg-accent text-primary font-bold':'text-white/40 hover:text-white hover:bg-white/5'}`}
-            >{item.icon}<span className="uppercase tracking-wider text-[11px]">{item.label}</span></button>
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all text-sm ${view===item.id?'bg-accent text-primary font-bold':'text-white/40 hover:text-white hover:bg-white/5'}`}
+            >
+              <div className="flex items-center gap-3">{item.icon}<span className="uppercase tracking-wider text-[11px]">{item.label}</span></div>
+              {item.id==='bookings' && notifCount.bookings > 0 && <span className="bg-red-500 text-white text-[9px] w-5 h-5 flex items-center justify-center rounded-full font-black ml-auto">{notifCount.bookings}</span>}
+              {item.id==='orders' && notifCount.orders > 0 && <span className="bg-red-500 text-white text-[9px] w-5 h-5 flex items-center justify-center rounded-full font-black ml-auto">{notifCount.orders}</span>}
+            </button>
           ))}
         </nav>
         <button onClick={()=>{localStorage.removeItem('admin_access');window.location.href='/admin-login';}}
@@ -487,6 +674,113 @@ const AdminDashboard = () => {
             </motion.div>
           )}
 
+          {/* ─── TASKS & CALENDAR ─── */}
+          {view==='tasks' && (
+            <motion.div key="tk" initial={{opacity:0}} animate={{opacity:1}} className="space-y-6">
+              <div className="flex justify-between items-center">
+                <h2 className="text-3xl font-heading">Tasks & <span className="gold-text-gradient italic">Calendar</span></h2>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Calendar Side */}
+                <div className="glass-card p-6 border-white/10">
+                  <div className="flex justify-between items-center mb-6">
+                    <button onClick={()=>setCalendarMonth(p=>{if(p===0){setCalendarYear(y=>y-1);return 11;}return p-1;})} className="text-white/40 hover:text-accent font-bold px-3 py-1 bg-white/5 rounded-lg">&lt;</button>
+                    <h3 className="font-heading font-black text-lg text-accent uppercase tracking-widest">{MONTHS[calendarMonth]} {calendarYear}</h3>
+                    <button onClick={()=>setCalendarMonth(p=>{if(p===11){setCalendarYear(y=>y+1);return 0;}return p+1;})} className="text-white/40 hover:text-accent font-bold px-3 py-1 bg-white/5 rounded-lg">&gt;</button>
+                  </div>
+                  <div className="grid grid-cols-7 gap-2 text-center text-[10px] font-black uppercase text-white/30 mb-4">
+                    {['Sn','Mo','Tu','We','Th','Fr','Sa'].map(d=><div key={d}>{d}</div>)}
+                  </div>
+                  <div className="grid grid-cols-7 gap-2">
+                    {(() => {
+                      const daysInMonth = new Date(calendarYear, calendarMonth+1, 0).getDate();
+                      const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
+                      const cells = [];
+                      for(let i=0; i<firstDay; i++) cells.push(<div key={`e-${i}`}/>);
+                      for(let d=1; d<=daysInMonth; d++) {
+                        const dateStr = `${calendarYear}-${String(calendarMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                        const isSel = dateStr === selectedTaskDate;
+                        const hasTask = tasks.some(t => t.date === dateStr && !t.completed);
+                        const hasBooking = bookings.some(b => b.booking_date === dateStr && (b.status === 'confirmed' || b.status === 'completed'));
+                        
+                        cells.push(
+                          <button key={d} onClick={()=>setSelectedTaskDate(dateStr)} className={`relative h-10 rounded-xl flex items-center justify-center font-bold text-sm transition-colors border ${isSel ? 'bg-accent/20 border-accent text-accent' : 'bg-white/5 border-white/10 hover:border-white/30 text-white/70'}`}>
+                            {d}
+                            <div className="absolute top-1 right-1 flex gap-0.5">
+                              {hasBooking && <span className="w-1.5 h-1.5 rounded-full bg-blue-500"/>}
+                              {hasTask && <span className="w-1.5 h-1.5 rounded-full bg-orange-500"/>}
+                            </div>
+                          </button>
+                        );
+                      }
+                      return cells;
+                    })()}
+                  </div>
+                </div>
+
+                {/* Tasks & Bookings for Selected Date */}
+                <div className="space-y-6">
+                  {/* Selected Date Header */}
+                  <div className="p-4 bg-white/5 border border-white/10 border-b-0 rounded-t-2xl flex justify-between items-center -mb-6">
+                    <h3 className="font-heading text-lg">{new Date(selectedTaskDate).toLocaleDateString('en-US', {weekday:'long', month:'short', day:'numeric'})}</h3>
+                  </div>
+
+                  {/* Combined Timeline View */}
+                  <div className="glass-card p-6 !rounded-t-none border-t border-white/10 max-h-[400px] overflow-y-auto space-y-6">
+                    {(() => {
+                        const dayBookings = bookings.filter(b => b.booking_date === selectedTaskDate && (b.status === 'confirmed' || b.status === 'completed'))
+                          .map(b => ({ type: 'booking', time: getSlotLabel(b.slots[0]).split(' - ')[0], rawTime: b.slots[0], data: b }));
+                        const dayTasks = tasks.filter(t => t.date === selectedTaskDate)
+                          .map(t => ({ type: 'task', time: t.time, rawTime: parseInt((t.time||'0').split(':')[0]) + parseInt((t.time||'0').split(':')[1]||0)/60, data: t }));
+                          
+                        const allEvents = [...dayBookings, ...dayTasks].sort((a,b) => a.rawTime - b.rawTime);
+                        
+                        if (allEvents.length === 0) return <p className="text-white/30 text-xs text-center py-10 font-bold uppercase tracking-widest">No scheduled events</p>;
+                        
+                        return allEvents.map((ev, idx) => (
+                           <div key={idx} className="flex gap-4">
+                              <div className="w-14 flex-shrink-0 text-right pt-2 mt-0.5">
+                                <span className={`text-[10px] font-black tracking-widest uppercase ${ev.type==='booking' ? 'text-blue-400' : 'text-orange-400'}`}>{ev.time}</span>
+                              </div>
+                              <div className="flex-1 border-l-2 border-white/10 pl-4 py-1 relative">
+                                <div className={`absolute -left-[5px] top-3 w-2 h-2 rounded-full ${ev.type==='booking' ? 'bg-blue-400 shadow-[0_0_8px_#3b82f6]' : 'bg-orange-400 shadow-[0_0_8px_#f97316]'}`}/>
+                                {ev.type === 'booking' ? (
+                                   <div className="bg-blue-500/10 border border-blue-500/20 p-3 rounded-xl">
+                                      <p className="font-bold text-sm text-blue-100">{ev.data.customer_name} <span className="opacity-50 font-normal">({ev.data.guest_count} guests)</span></p>
+                                      <p className="text-[10px] uppercase text-blue-400 mt-1 font-black">{ev.data.screen} · Slots: {formatSlotsDisplay(ev.data.slots)}</p>
+                                   </div>
+                                ) : (
+                                   <div className={`flex items-center justify-between p-3 rounded-xl border ${ev.data.completed ? 'bg-green-500/5 text-white/40 border-green-500/10' : 'bg-orange-500/5 border-orange-500/20'}`}>
+                                      <div className={`font-bold text-sm leading-tight ${ev.data.completed ? 'line-through' : 'text-orange-100'}`}>{ev.data.title}</div>
+                                      <div className="flex items-center gap-2">
+                                        <button onClick={()=>toggleTask(ev.data.id, ev.data.completed)} className={`border px-2 py-1 rounded text-[9px] uppercase font-black ${ev.data.completed ? 'text-green-500 border-green-500/30 hover:bg-green-500/10' : 'text-orange-400 border-orange-500/30 hover:bg-orange-500/20'}`}>
+                                           {ev.data.completed ? 'Done' : 'Mark Done'}
+                                        </button>
+                                        <button onClick={()=>deleteTask(ev.data.id)} className="text-red-400/50 hover:text-red-400 transition-colors bg-red-500/10 p-1.5 rounded-md"><X size={12}/></button>
+                                      </div>
+                                   </div>
+                                )}
+                              </div>
+                           </div>
+                        ));
+                    })()}
+                  </div>
+
+                  {/* Add New Task Form */}
+                  <div className="glass-card p-5 !border-accent/30 space-y-3 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-accent/5 blur-3xl -z-10 rounded-full"/>
+                    <h4 className="text-[10px] uppercase tracking-widest font-black text-accent mb-2 flex items-center gap-1.5"><CheckSquare size={12}/>{selectedTaskDate} Schedule</h4>
+                    <form onSubmit={addTask} className="flex flex-col sm:flex-row gap-2">
+                      <input type="text" required placeholder="To-do element..." className="flex-1 bg-white/5 border border-white/10 px-3 py-2 text-sm rounded-xl outline-none focus:border-accent" value={taskForm.title} onChange={e=>setTaskForm({...taskForm,title:e.target.value})} />
+                      <input type="time" required className="w-28 bg-white/5 border border-white/10 px-3 py-2 text-sm rounded-xl outline-none focus:border-accent text-white" value={taskForm.time} onChange={e=>setTaskForm({...taskForm,time:e.target.value})} />
+                      <button className="gold-button !px-4 !py-2 !text-[10px] uppercase font-black"><Plus size={14}/></button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
           {/* ─── BOOKINGS ─── */}
           {view==='bookings' && (() => {
             const filtered = bookings.filter(b => {
@@ -501,14 +795,20 @@ const AdminDashboard = () => {
                 <button onClick={()=>setShowBookingModal(true)} className="gold-button !px-5 !py-2.5 !text-xs flex items-center gap-2"><Plus size={14}/>Manual Book</button>
               </div>
               {/* Filters */}
-              <div className="flex flex-wrap gap-3 items-center glass-card p-4">
-                <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} className="bg-white/5 border border-white/10 text-white text-xs rounded-lg px-3 py-2 outline-none">
-                  <option value="all" className="bg-[#05071A]">All Statuses</option>
-                  {BOOKING_STATUSES.map(s=><option key={s} value={s} className="bg-[#05071A]">{s}</option>)}
-                </select>
-                <input type="date" value={filterDate} onChange={e=>setFilterDate(e.target.value)} className="bg-white/5 border border-white/10 text-white text-xs rounded-lg px-3 py-2 outline-none" />
-                {filterDate && <button onClick={()=>setFilterDate('')} className="text-[9px] text-red-400 border border-red-500/20 px-2 py-1 rounded-lg">Clear Date</button>}
-                <span className="text-[10px] text-white/30 ml-auto">{filtered.length} bookings</span>
+              <div className="flex flex-wrap gap-2 items-center glass-card p-4">
+                {['pending','confirmed','completed','cancelled','all'].map(s => {
+                  const clsMap = {pending:'border-yellow-500/40 text-yellow-400 bg-yellow-500/10',confirmed:'border-blue-500/40 text-blue-400 bg-blue-500/10',completed:'border-green-500/40 text-green-400 bg-green-500/10',cancelled:'border-red-500/40 text-red-400 bg-red-500/10',all:'border-white/20 text-white/60 bg-white/5'};
+                  const cnt = s==='all' ? bookings.length : bookings.filter(b=>b.status===s).length;
+                  return (
+                    <button key={s} onClick={()=>setFilterStatus(s)}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all border flex items-center gap-1.5 ${filterStatus===s ? (clsMap[s]||'bg-accent text-primary border-accent') : 'bg-white/5 border-white/10 text-white/30 hover:text-white'}`}
+                    >{s} <span className="opacity-60">({cnt})</span></button>
+                  );
+                })}
+                <div className="ml-auto flex items-center gap-2">
+                  <input type="date" value={filterDate} onChange={e=>setFilterDate(e.target.value)} className="bg-white/5 border border-white/10 text-white text-xs rounded-lg px-3 py-2 outline-none" />
+                  {filterDate && <button onClick={()=>setFilterDate('')} className="text-[9px] text-red-400 border border-red-500/20 px-2 py-1 rounded-lg">✕ Date</button>}
+                </div>
               </div>
               <div className="space-y-3">
                 {filtered.map(b=>{
@@ -541,6 +841,11 @@ const AdminDashboard = () => {
                         {b.status==='pending' && (
                           <button onClick={()=>openAdvanceModal(b)} className="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-3 py-1.5 rounded-lg font-black uppercase">
                             Confirm + Advance
+                          </button>
+                        )}
+                        {b.status==='confirmed' && (
+                          <button onClick={()=>openDueModal(b)} className="text-[9px] bg-green-500/20 text-green-400 border border-green-500/30 px-3 py-1.5 rounded-lg font-black uppercase">
+                            Mark Completed
                           </button>
                         )}
                         {b.status!=='cancelled' && b.status!=='completed' && (
@@ -642,24 +947,98 @@ const AdminDashboard = () => {
           {/* ─── MENU ─── */}
           {view==='menu' && (
             <motion.div key="mn" initial={{opacity:0}} animate={{opacity:1}} className="space-y-6">
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <h2 className="text-3xl font-heading">Menu <span className="gold-text-gradient italic">Catalog</span></h2>
-                <button onClick={()=>{setMenuForm({id:'',name:'',category:'Drinks',member_price:'',non_member_price:'',image_url:''});setIsEditingMenu(false);setShowMenuModal(true);}} className="gold-button !px-5 !py-2.5 !text-xs flex items-center gap-2"><Plus size={14}/>Add Item</button>
+                <div className="flex gap-2 flex-wrap">
+                  <button onClick={()=>setShowAddCategory(!showAddCategory)} className="glass-card border-white/10 !px-4 !py-2 text-xs flex items-center gap-2 hover:bg-white/5 transition-colors">
+                    <Plus size={13} className="text-accent"/> New Category
+                  </button>
+                  <button onClick={()=>{
+                    setMenuForm({id:'',name:'',category:menuCategories[0]||'Drinks',member_price:'',non_member_price:'',image_url:''});
+                    setImageFile(null); setImagePreview(''); setIsEditingMenu(false); setShowMenuModal(true);
+                  }} className="gold-button !px-5 !py-2.5 !text-xs flex items-center gap-2"><Plus size={14}/>Add Item</button>
+                </div>
               </div>
+
+              {/* Add Category Inline Panel */}
+              <AnimatePresence>
+                {showAddCategory && (
+                  <motion.div initial={{opacity:0,height:0}} animate={{opacity:1,height:'auto'}} exit={{opacity:0,height:0}}
+                    className="glass-card p-5 border-accent/20 overflow-hidden"
+                  >
+                    <p className="text-[10px] uppercase tracking-widest text-accent font-black mb-4">Manage Categories</p>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {menuCategories.map(cat => (
+                        <div key={cat} className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 border border-white/10 rounded-xl text-xs">
+                          <span>{cat}</span>
+                          <button onClick={()=>deleteCategory(cat)} className="text-red-400 hover:text-red-300 ml-1">
+                            <X size={11}/>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-3">
+                      <input
+                        type="text" placeholder="New category name..."
+                        value={newCategory} onChange={e=>setNewCategory(e.target.value)}
+                        onKeyDown={e=>e.key==='Enter'&&saveCategory()}
+                        className="flex-1 bg-white/5 border border-white/10 px-4 py-2.5 rounded-xl outline-none focus:border-accent text-sm"
+                      />
+                      <button onClick={saveCategory} className="gold-button !px-5 !py-2 !text-[10px] font-black">Add</button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Category Filter Tabs */}
+              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                {['All', ...menuCategories].map(c => (
+                  <button key={c} onClick={()=>setMenuCatFilter(c)}
+                    className={`px-4 py-2 rounded-xl border whitespace-nowrap text-xs font-bold transition-all flex-shrink-0 ${menuCatFilter===c ? 'bg-accent border-accent text-primary' : 'bg-white/5 border-white/10 text-white/50 hover:text-white'}`}
+                  >{c} ({c==='All' ? menuItems.length : menuItems.filter(m=>m.category===c).length})</button>
+                ))}
+              </div>
+
+              {/* Menu Items Table */}
               <div className="glass-card overflow-hidden">
                 <table className="w-full text-left">
-                  <thead className="bg-white/5 border-b border-white/5"><tr>{['Item','Category','Member Price','Non-Member Price','Actions'].map(h=><th key={h} className="p-4 text-[9px] uppercase tracking-[0.2em] text-white/40">{h}</th>)}</tr></thead>
-                  <tbody>{menuItems.map(m=><tr key={m.id} className="border-t border-white/5 hover:bg-white/[0.02]">
-                    <td className="p-4 font-medium text-sm flex items-center gap-3">
-                      {m.image_url ? <img src={m.image_url} alt="img" className="w-8 h-8 rounded-lg object-cover" /> : <div className="w-8 h-8 bg-white/5 rounded-lg flex items-center justify-center"><UtensilsCrossed size={12}/></div>}
-                      {m.name}
-                    </td>
-                    <td className="p-4 text-accent/80 text-xs">{m.category}</td><td className="p-4 text-accent font-bold">₹{m.member_price}</td><td className="p-4 text-white/60">₹{m.non_member_price}</td>
-                    <td className="p-4 flex gap-2">
-                       <button onClick={()=>{setMenuForm(m);setIsEditingMenu(true);setShowMenuModal(true);}} className="bg-blue-500/20 text-blue-400 px-3 py-1 text-[10px] rounded-full uppercase tracking-widest font-bold">Edit</button>
-                       <button onClick={()=>deleteMenu(m.id)} className="bg-red-500/20 text-red-500 px-3 py-1 text-[10px] rounded-full uppercase tracking-widest font-bold">Del</button>
-                    </td>
-                  </tr>)}</tbody>
+                  <thead className="bg-white/5 border-b border-white/5">
+                    <tr>{['Image & Item','Category','Member Price','Non-Member Price','Actions'].map(h=><th key={h} className="p-4 text-[9px] uppercase tracking-[0.2em] text-white/40 whitespace-nowrap">{h}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {menuItems
+                      .filter(m => menuCatFilter==='All' || m.category===menuCatFilter)
+                      .map(m => (
+                      <tr key={m.id} className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            {m.image_url
+                              ? <img src={m.image_url} alt={m.name} className="w-12 h-12 rounded-xl object-cover border border-white/10" />
+                              : <div className="w-12 h-12 bg-white/5 rounded-xl flex items-center justify-center border border-white/10"><ImageIcon size={16} className="text-white/20"/></div>
+                            }
+                            <span className="font-medium text-sm">{m.name}</span>
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <span className="px-2 py-1 bg-accent/10 border border-accent/20 rounded-full text-[9px] font-black uppercase tracking-widest text-accent">{m.category}</span>
+                        </td>
+                        <td className="p-4 text-accent font-bold">₹{m.member_price}</td>
+                        <td className="p-4 text-white/60">₹{m.non_member_price}</td>
+                        <td className="p-4">
+                           <div className="flex gap-2">
+                             <button onClick={()=>{
+                               setMenuForm(m); setImagePreview(m.image_url||''); setImageFile(null);
+                               setIsEditingMenu(true); setShowMenuModal(true);
+                             }} className="bg-blue-500/20 text-blue-400 border border-blue-500/20 px-3 py-1 text-[9px] rounded-lg uppercase tracking-widest font-bold hover:bg-blue-500/30 transition-colors">Edit</button>
+                             <button onClick={()=>deleteMenu(m.id)} className="bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1 text-[9px] rounded-lg uppercase tracking-widest font-bold hover:bg-red-500/20 transition-colors">Delete</button>
+                           </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {menuItems.filter(m=>menuCatFilter==='All'||m.category===menuCatFilter).length===0 && (
+                      <tr><td colSpan={5} className="p-12 text-center text-white/20 text-sm">No items in this category</td></tr>
+                    )}
+                  </tbody>
                 </table>
               </div>
             </motion.div>
@@ -668,18 +1047,43 @@ const AdminDashboard = () => {
           {/* ─── MEMBERS ─── */}
           {view==='members' && (
             <motion.div key="mem" initial={{opacity:0}} animate={{opacity:1}} className="space-y-6">
-              <h2 className="text-3xl font-heading">Members <span className="gold-text-gradient italic">Registry</span></h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {customers.map(c=>(
-                  <div key={c.id} className="navy-card !p-6">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-accent"><Users size={18}/></div>
-                      {c.is_member&&<div className="bg-accent text-primary px-3 py-1 rounded-full text-[8px] font-black uppercase">Member</div>}
-                    </div>
-                    <h4 className="text-lg font-heading mb-1">{c.name}</h4>
-                    <p className="text-xs text-white/20 tracking-widest uppercase">{c.mobile_number}</p>
-                  </div>
-                ))}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <h2 className="text-3xl font-heading">Members <span className="gold-text-gradient italic">Registry</span></h2>
+                <div className="flex gap-2 flex-wrap">
+                  {['all','gold','silver','non_member'].map(f => (
+                    <button key={f} onClick={()=>setMemberFilter(f)}
+                      className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg border transition-all ${memberFilter===f ? 'bg-accent text-primary border-accent' : 'bg-white/5 border-white/10 text-white/40 hover:text-white'}`}
+                    >{f.replace('_',' ')}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="glass-card overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-white/5 border-b border-white/5">
+                    <tr>{['Name','Mobile','Membership','Bookings','Total Spend'].map(h => <th key={h} className="p-4 text-[9px] uppercase tracking-[0.2em] text-white/40 whitespace-nowrap">{h}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {customers
+                      .filter(c => memberFilter==='all' || c.membership_type===memberFilter)
+                      .sort((a,b) => (memberSpend[b.id]||0) - (memberSpend[a.id]||0))
+                      .map(c => (
+                      <tr key={c.id} className="border-t border-white/5 hover:bg-white/[0.02]">
+                        <td className="p-4 font-medium">{c.name}</td>
+                        <td className="p-4 text-white/50 text-sm">{c.mobile_number}</td>
+                        <td className="p-4">
+                          <span className={`px-2 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border ${c.membership_type==='gold' ? 'text-yellow-400 border-yellow-500/30 bg-yellow-500/10' : c.membership_type==='silver' ? 'text-gray-300 border-white/20 bg-white/5' : 'text-white/30 border-white/10 bg-white/5'}`}>
+                            {c.membership_type?.replace('_',' ') || 'Non-Member'}
+                          </span>
+                        </td>
+                        <td className="p-4 text-accent font-bold">{memberBookings[c.id]||0}</td>
+                        <td className="p-4 font-bold gold-text-gradient">₹{memberSpend[c.id]||0}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {customers.filter(c => memberFilter==='all' || c.membership_type===memberFilter).length === 0 && (
+                  <p className="text-center text-white/30 text-sm py-12">No customers found</p>
+                )}
               </div>
             </motion.div>
           )}
@@ -803,12 +1207,12 @@ const AdminDashboard = () => {
 
           {/* ─── SETTINGS ─── */}
           {view==='settings' && (
-            <motion.div key="st" initial={{opacity:0}} animate={{opacity:1}} className="space-y-8 max-w-lg">
+            <motion.div key="st" initial={{opacity:0}} animate={{opacity:1}} className="space-y-8 max-w-2xl">
               <h2 className="text-3xl font-heading">System <span className="gold-text-gradient italic">Settings</span></h2>
               <div className="glass-card p-8 space-y-6">
                 <div>
-                  <h3 className="text-sm uppercase tracking-widest font-black text-accent mb-1 flex items-center gap-2"><MessageCircle size={14}/>WhatsApp Notification Number</h3>
-                  <p className="text-[10px] text-white/30 mb-4">All booking & food order WhatsApp messages will go to this number.</p>
+                  <h3 className="text-sm uppercase tracking-widest font-black text-accent mb-1 flex items-center gap-2"><MessageCircle size={14}/>WhatsApp Number</h3>
+                  <p className="text-[10px] text-white/30 mb-4">All WhatsApp messages will go to this number.</p>
                   <div className="flex gap-3">
                     <input type="tel" value={waInput} onChange={e=>setWaInput(e.target.value.replace(/\D/g,''))} maxLength={10}
                       className="flex-1 bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-xl tracking-widest text-center font-heading"
@@ -818,32 +1222,63 @@ const AdminDashboard = () => {
                   <p className="text-[10px] text-white/20 mt-3">Current: +91 {waNumber}</p>
                 </div>
 
-                <div className="pt-8 border-t border-white/10">
-                  <h3 className="text-sm uppercase tracking-widest font-black text-accent mb-4 flex items-center gap-2">Slot Pricing Configurations</h3>
-                  <div className="space-y-6">
-                    {Object.keys(pricingMap).map(screen => (
-                      <div key={screen} className="border border-white/10 rounded-xl p-4 bg-white/[0.02]">
-                        <p className="font-heading font-black mb-3">{screen}</p>
-                        <div className="grid grid-cols-3 gap-3">
-                          <div>
-                            <p className="text-[9px] uppercase tracking-widest text-white/40 mb-1">Non-Member</p>
-                            <input type="number" className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm rounded-lg outline-none focus:border-accent" value={pricingMap[screen].non_member} onChange={e=>setPricingMap(p=>({...p, [screen]: {...p[screen], non_member: Number(e.target.value)}}))} />
-                          </div>
-                          <div>
-                            <p className="text-[9px] uppercase tracking-widest text-white/40 mb-1">Silver</p>
-                            <input type="number" className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-gray-300 rounded-lg outline-none focus:border-accent" value={pricingMap[screen].silver} onChange={e=>setPricingMap(p=>({...p, [screen]: {...p[screen], silver: Number(e.target.value)}}))} />
-                          </div>
-                          <div>
-                            <p className="text-[9px] uppercase tracking-widest text-white/40 mb-1 flex items-center gap-1">Gold</p>
-                            <input type="number" className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm gold-text-gradient rounded-lg outline-none focus:border-accent" value={pricingMap[screen].gold} onChange={e=>setPricingMap(p=>({...p, [screen]: {...p[screen], gold: Number(e.target.value)}}))} />
-                          </div>
-                        </div>
+                {/* Screen Management */}
+                <div className="pt-6 border-t border-white/10">
+                  <h3 className="text-sm uppercase tracking-widest font-black text-accent mb-4 flex items-center gap-2"><Monitor size={14}/>Screen Management</h3>
+                  <div className="space-y-3">
+                    {screens.map(screen => (
+                      <div key={screen} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10">
+                        <span className="font-medium text-sm">{screen}</span>
+                        {!['Screen 1','Screen 2','TV Screen'].includes(screen) && (
+                          <button onClick={async () => {
+                            const updated = screens.filter(s => s!==screen);
+                            const updMap = {}; updated.forEach(s => { updMap[s] = pricingMap[s] || {gold:299,silver:399,non_member:499}; });
+                            setScreens(updated); setPricingMap(updMap);
+                            await setDoc(doc(db,'pricing','rates'),{screens:updMap});
+                          }} className="text-red-400 hover:text-red-300 p-1">
+                            <Trash2 size={14}/>
+                          </button>
+                        )}
                       </div>
                     ))}
-                    <button onClick={savePricing} className="gold-button w-full mt-4 !px-4 !py-3 !text-[10px] font-black uppercase tracking-widest">Save Pricing</button>
+                    <div className="flex gap-3 mt-2">
+                      <input type="text" placeholder="New screen name..." value={newScreenName} onChange={e=>setNewScreenName(e.target.value)}
+                        className="flex-1 bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm"/>
+                      <button onClick={async () => {
+                        if (!newScreenName.trim()) return;
+                        const s = newScreenName.trim();
+                        const updated = [...screens, s];
+                        const updMap = {...pricingMap, [s]: {gold:299,silver:399,non_member:499}};
+                        setScreens(updated); setPricingMap(updMap); setNewScreenName('');
+                        await setDoc(doc(db,'pricing','rates'),{screens:updMap});
+                      }} className="gold-button !px-4 !py-3 !text-[10px] font-black">
+                        <Plus size={14}/>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
+                <div className="pt-6 border-t border-white/10">
+                  <h3 className="text-sm uppercase tracking-widest font-black text-accent mb-4">Slot Pricing per Screen</h3>
+                  <div className="space-y-4">
+                    {screens.map(screen => (
+                      <div key={screen} className="border border-white/10 rounded-xl p-4 bg-white/[0.02]">
+                        <p className="font-heading font-black mb-3">{screen}</p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <div><p className="text-[9px] uppercase tracking-widest text-white/40 mb-1">Non-Member</p>
+                            <input type="number" className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm rounded-lg outline-none focus:border-accent" value={(pricingMap[screen]||{}).non_member||499} onChange={e=>setPricingMap(p=>({...p,[screen]:{...(p[screen]||{}),non_member:Number(e.target.value)}}))} /></div>
+                          <div><p className="text-[9px] uppercase tracking-widest text-white/40 mb-1">Silver</p>
+                            <input type="number" className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-gray-300 rounded-lg outline-none focus:border-accent" value={(pricingMap[screen]||{}).silver||399} onChange={e=>setPricingMap(p=>({...p,[screen]:{...(p[screen]||{}),silver:Number(e.target.value)}}))} /></div>
+                          <div><p className="text-[9px] uppercase tracking-widest text-white/40 mb-1">Gold</p>
+                            <input type="number" className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm gold-text-gradient rounded-lg outline-none focus:border-accent" value={(pricingMap[screen]||{}).gold||299} onChange={e=>setPricingMap(p=>({...p,[screen]:{...(p[screen]||{}),gold:Number(e.target.value)}}))} /></div>
+                          <div><p className="text-[9px] uppercase tracking-widest text-accent mb-1 font-black">Max Guests</p>
+                            <input type="number" className="w-full bg-accent/10 border border-accent/20 px-3 py-2 text-sm text-accent rounded-lg outline-none focus:border-accent" value={(pricingMap[screen]||{}).max_guests||6} onChange={e=>setPricingMap(p=>({...p,[screen]:{...(p[screen]||{}),max_guests:Number(e.target.value)}}))} /></div>
+                        </div>
+                      </div>
+                    ))}
+                    <button onClick={savePricing} className="gold-button w-full mt-2 !px-4 !py-3 !text-[10px] font-black uppercase tracking-widest">Save Pricing</button>
+                  </div>
+                </div>
               </div>
             </motion.div>
           )}
@@ -896,19 +1331,111 @@ const AdminDashboard = () => {
       {showMenuModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={()=>setShowMenuModal(false)}/>
-          <motion.div initial={{scale:0.9,opacity:0}} animate={{scale:1,opacity:1}} className="glass-card !bg-[#05071A] p-8 max-w-md w-full relative z-10 border-accent/20 space-y-5">
-            <h3 className="text-2xl font-heading gold-text-gradient">{isEditingMenu ? 'Edit Menu Item' : 'Add Menu Item'}</h3>
-            <form onSubmit={saveMenu} className="space-y-4">
-              <input type="text" required placeholder="Item Name" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm" value={menuForm.name} onChange={e=>setMenuForm({...menuForm,name:e.target.value})}/>
-              <input type="url" placeholder="Image URL (optional)" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm" value={menuForm.image_url} onChange={e=>setMenuForm({...menuForm,image_url:e.target.value})}/>
-              <select required className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-white text-sm" value={menuForm.category} onChange={e=>setMenuForm({...menuForm,category:e.target.value})}>
-                {['Drinks','Snacks','Main Course','Desserts','Shisha'].map(c=><option key={c} value={c} className="bg-primary">{c}</option>)}
-              </select>
-              <div className="grid grid-cols-2 gap-3">
-                <input type="number" required placeholder="Member Price" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm" value={menuForm.member_price} onChange={e=>setMenuForm({...menuForm,member_price:e.target.value})}/>
-                <input type="number" required placeholder="Non-Member Price" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm" value={menuForm.non_member_price} onChange={e=>setMenuForm({...menuForm,non_member_price:e.target.value})}/>
+          <motion.div initial={{scale:0.9,opacity:0}} animate={{scale:1,opacity:1}}
+            className="glass-card !bg-[#05071A] p-8 max-w-lg w-full relative z-10 border-accent/20 max-h-[95vh] overflow-y-auto"
+          >
+            <h3 className="text-2xl font-heading gold-text-gradient mb-6">
+              {isEditingMenu ? '✏️ Edit Menu Item' : '➕ Add Menu Item'}
+            </h3>
+            <form onSubmit={saveMenu} className="space-y-5">
+              {/* Item name */}
+              <div className="space-y-1.5">
+                <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Item Name *</label>
+                <input type="text" required placeholder="e.g. Cold Coffee, Peri Peri Fries"
+                  className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm"
+                  value={menuForm.name} onChange={e=>setMenuForm({...menuForm,name:e.target.value})}
+                />
               </div>
-              <button className="gold-button w-full py-4 !text-[10px] uppercase font-black">{isEditingMenu ? 'Update Item' : 'Save to Menu'}</button>
+
+              {/* Image upload */}
+              <div className="space-y-2">
+                <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Item Photo</label>
+                <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageSelect} />
+                {imagePreview || menuForm.image_url ? (
+                  <div className="relative group">
+                    <img
+                      src={imagePreview || menuForm.image_url}
+                      alt="preview"
+                      className="w-full h-40 object-cover rounded-2xl border border-white/10"
+                    />
+                    <button
+                      type="button"
+                      onClick={()=>{ setImageFile(null); setImagePreview(''); setMenuForm(f=>({...f,image_url:''})); if(fileInputRef.current) fileInputRef.current.value=''; }}
+                      className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-1.5 hover:bg-red-500 transition-colors"
+                    ><X size={14}/></button>
+                    <button type="button" onClick={()=>fileInputRef.current?.click()}
+                      className="absolute bottom-2 right-2 bg-black/70 text-white text-[9px] uppercase tracking-widest font-black px-3 py-1.5 rounded-xl border border-white/20 hover:bg-accent hover:text-primary transition-all"
+                    >Change Photo</button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={()=>fileInputRef.current?.click()}
+                    className="w-full h-32 border-2 border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center gap-3 hover:border-accent/40 hover:bg-white/5 transition-all group"
+                  >
+                    <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center group-hover:bg-accent/20 transition-colors">
+                      <Upload size={18} className="text-accent"/>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs font-bold text-white/60">Click to upload image</p>
+                      <p className="text-[9px] text-white/20 mt-0.5">PNG, JPG, WEBP • Max 5MB</p>
+                    </div>
+                  </button>
+                )}
+                {imageUploading && (
+                  <div className="space-y-1.5">
+                    <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-full bg-accent rounded-full transition-all duration-200" style={{width:`${uploadProgress}%`}}/>
+                    </div>
+                    <p className="text-[9px] text-accent text-center">Uploading... {uploadProgress}%</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Category */}
+              <div className="space-y-1.5">
+                <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Category *</label>
+                <select required
+                  className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none text-white text-sm"
+                  value={menuForm.category}
+                  onChange={e=>setMenuForm({...menuForm,category:e.target.value})}
+                >
+                  {menuCategories.map(c=><option key={c} value={c} className="bg-[#05071A]">{c}</option>)}
+                </select>
+                <p className="text-[9px] text-white/20">Add new categories from the Menu tab ("New Category" button).</p>
+              </div>
+
+              {/* Pricing */}
+              <div className="space-y-1.5">
+                <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Pricing (₹) *</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[9px] text-accent/60 mb-1.5">Member Price</p>
+                    <input type="number" required placeholder="e.g. 150"
+                      className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm"
+                      value={menuForm.member_price} onChange={e=>setMenuForm({...menuForm,member_price:e.target.value})}
+                    />
+                  </div>
+                  <div>
+                    <p className="text-[9px] text-white/40 mb-1.5">Non-Member Price</p>
+                    <input type="number" required placeholder="e.g. 200"
+                      className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm"
+                      value={menuForm.non_member_price} onChange={e=>setMenuForm({...menuForm,non_member_price:e.target.value})}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={()=>setShowMenuModal(false)}
+                  className="flex-1 py-4 rounded-xl border border-white/10 text-white/40 text-[10px] uppercase font-black hover:bg-white/5 transition-colors"
+                >Cancel</button>
+                <button type="submit" disabled={imageUploading}
+                  className="flex-1 gold-button !py-4 !text-[10px] uppercase font-black"
+                >
+                  {imageUploading ? `Uploading ${uploadProgress}%...` : isEditingMenu ? 'Update Item' : 'Save to Menu'}
+                </button>
+              </div>
             </form>
           </motion.div>
         </div>
@@ -980,6 +1507,32 @@ const AdminDashboard = () => {
                 <button onClick={()=>setShowCancelModal(false)} className="flex-1 py-3 rounded-xl border border-white/10 text-white/40 text-[10px] uppercase font-black">Back</button>
                 <button onClick={confirmCancel} className="flex-1 bg-red-500/20 text-red-400 border border-red-500/30 py-3 rounded-xl font-black uppercase tracking-widest text-[10px]">Confirm Cancel</button>
               </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Due Amount Modal */}
+      {showDueModal && dueTarget && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={()=>setShowDueModal(false)}/>
+          <motion.div initial={{scale:0.9,opacity:0}} animate={{scale:1,opacity:1}} className="glass-card !bg-[#05071A] p-8 max-w-md w-full relative z-10 border-green-500/20 space-y-5">
+            <h3 className="text-2xl font-heading text-green-400">Mark as Completed</h3>
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10 space-y-2">
+              <p className="font-bold">{dueTarget.customer_name}</p>
+              <p className="text-sm text-white/40">{dueTarget.booking_date} · {dueTarget.screen}</p>
+              <p className="text-accent font-bold">Total: ₹{dueTarget.final_price||dueTarget.price} · Advance: ₹{dueTarget.advance_paid||0}</p>
+              <p className="text-yellow-400 text-sm font-bold">Remaining to collect: ₹{(dueTarget.remaining_amount)||(dueTarget.final_price||dueTarget.price||0)-(dueTarget.advance_paid||0)}</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Final Amount Collected on Arrival (₹)</label>
+              <input type="number" value={dueAmount} onChange={e=>setDueAmount(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-green-400 text-xl font-heading text-center"
+                placeholder="Enter amount paid"/>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={()=>setShowDueModal(false)} className="flex-1 py-3 rounded-xl border border-white/10 text-white/40 text-[10px] uppercase font-black">Back</button>
+              <button onClick={saveDueAmount} className="flex-1 bg-green-500/20 text-green-400 border border-green-500/30 py-3 rounded-xl font-black uppercase tracking-widest text-[10px]">Confirm Completion</button>
             </div>
           </motion.div>
         </div>

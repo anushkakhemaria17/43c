@@ -8,6 +8,7 @@ import {
   SLOT_HOURS, getSlotLabel, getAvailableDates, getSlotStatusMap, formatSlotsDisplay, getTodayStr
 } from '../utils/slots';
 import { getWhatsAppNumber } from '../utils/settings';
+import { createNotification } from '../utils/firebaseHelpers';
 
 const BookingPage = () => {
   const { customer, checkMobile, login, register } = useAuth();
@@ -169,6 +170,24 @@ const BookingPage = () => {
         amount: totalPrice,
         status: 'pending',
         created_at: serverTimestamp(),
+      });
+
+      // Notify customer
+      await createNotification({
+        userId: customer.id,
+        type: 'booking_submitted',
+        message: `Your booking request for ${selectedDate} (${selectedScreen}) has been submitted! Admin will confirm shortly. Total: ₹${totalPrice}`,
+        bookingId: bookingRef.id,
+      });
+
+      // Notify admin
+      await createNotification({
+        userId: null,
+        type: 'new_booking',
+        message: `🆕 New booking from ${customer.name} (${customer.mobile_number}) on ${selectedDate} · ${selectedScreen} · ₹${totalPrice}`,
+        bookingId: bookingRef.id,
+        notifyAdmin: true,
+        adminMessage: `🆕 New Booking: ${customer.name} · ${selectedDate} · ₹${totalPrice}`,
       });
 
       setConfirmedBooking({
@@ -421,7 +440,7 @@ const BookingPage = () => {
                   <div className="space-y-2">
                     <p className="text-[9px] uppercase tracking-widest text-white/30">Guests</p>
                     <div className="flex gap-2 flex-wrap">
-                      {[1, 2, 3, 4, 5, 6].map(n => (
+                      {Array.from({length: (pricingMap[selectedScreen]?.max_guests || 6)}, (_, i) => i + 1).map(n => (
                         <button key={n} onClick={() => setGuestCount(n)}
                           className={`w-9 h-9 rounded-xl text-sm font-bold transition-all ${guestCount === n ? 'bg-accent text-primary' : 'bg-white/5 text-white/40 hover:bg-white/10'}`}>
                           {n}

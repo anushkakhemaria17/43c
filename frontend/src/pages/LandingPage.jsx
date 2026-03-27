@@ -26,7 +26,7 @@ const LandingPage = () => {
                     >
                         <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-accent/10 border border-accent/20 mb-6">
                             <Star className="w-4 h-4 text-accent fill-accent" />
-                            <span className="text-xs uppercase tracking-[0.3em] font-bold text-accent">India's Premimum Lounge</span>
+                            <span className="text-xs uppercase tracking-[0.3em] font-bold text-accent">Lounge | Gaming | Cafe </span>
                         </div>
                         <h1 className="text-6xl md:text-8xl font-heading font-black leading-none mb-6">
                             Beyond <br />
@@ -68,7 +68,7 @@ const LandingPage = () => {
             <section className="py-24 px-4 bg-white/[0.02]">
                 <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-12">
                     {[
-                        { icon: ShieldCheck, title: "Utmost Privacy", desc: "Soundproof private lounges designed for business meetings or intimate gatherings." },
+                        { icon: ShieldCheck, title: "Utmost Privacy", desc: "Soundproof private lounges designed for business meetings, gatherings and parties." },
                         { icon: Clock, title: "Hourly Booking", desc: "Flexible hourly slots starting at your convenience, managed digitally." },
                         { icon: Star, title: "Premium Service", desc: "Dedicated stewards and entry-to-exit luxury catering just for you." }
                     ].map((feature, i) => (
