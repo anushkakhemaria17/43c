@@ -97,14 +97,14 @@ const ReceiptPage = () => {
               </div>
 
               {/* Booking Info */}
-              <div className="grid grid-cols-2 gap-y-6 border-t border-b border-white/5 py-6">
+              <div className="flex flex-col sm:grid sm:grid-cols-2 gap-y-6 border-t border-b border-white/5 py-6">
                 <div className="space-y-1">
                   <p className="text-white/20 uppercase text-[9px] tracking-widest font-black">Guest</p>
-                  <p className="text-lg font-heading tracking-tight">{booking.customer_name}</p>
+                  <p className="text-lg sm:text-base md:text-lg font-heading tracking-tight break-words">{booking.customer_name}</p>
                 </div>
-                <div className="space-y-1 text-right">
+                <div className="space-y-1 sm:text-right">
                   <p className="text-white/20 uppercase text-[9px] tracking-widest font-black">Party Size</p>
-                  <p className="text-lg font-heading tracking-tight">{booking.guest_count} Guests</p>
+                  <p className="text-lg sm:text-base md:text-lg font-heading tracking-tight">{booking.guest_count} Guests</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-white/20 uppercase text-[9px] tracking-widest font-black">Date</p>
@@ -112,9 +112,9 @@ const ReceiptPage = () => {
                     {new Date(booking.date + 'T00:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </p>
                 </div>
-                <div className="space-y-1 text-right">
+                <div className="space-y-1 sm:text-right">
                   <p className="text-white/20 uppercase text-[9px] tracking-widest font-black">Screen & Slots</p>
-                  <p className="text-sm font-heading tracking-tight text-accent">{booking.screen} • {formatSlotsDisplay(booking.slots)}</p>
+                  <p className="text-sm font-heading tracking-tight text-accent break-words">{booking.screen} • {formatSlotsDisplay(booking.slots)}</p>
                 </div>
               </div>
 
@@ -154,6 +154,13 @@ const ReceiptPage = () => {
                   <p className="text-[9px] uppercase tracking-widest text-white/20 mb-1">Payment</p>
                   <p className="text-sm font-bold font-heading text-white capitalize">{booking.payment_status}</p>
                 </div>
+              </div>
+
+              {/* Terms Link */}
+              <div className="border-t border-white/5 pt-5 mt-2 text-center no-print">
+                <a href="/terms" target="_blank" rel="noreferrer" className="text-[10px] uppercase tracking-widest text-white/40 hover:text-accent transition-colors underline underline-offset-4 font-bold">
+                  View Terms & Conditions
+                </a>
               </div>
             </div>
           </div>

@@ -35,10 +35,19 @@ export const getTodayStr = () => new Date().toISOString().split('T')[0];
  * Returns { hour: 'available' | 'booked' | 'closed' }
  * IMPORTANT: Only bookings with status "confirmed" or "completed" block a slot.
  * "pending" bookings do NOT block slots — admin must confirm first.
+ * For shared screens, it only blocks if seats booked >= capacity.
  */
-export const getSlotStatusMap = (dateStr, bookings, closedSlots, screen) => {
+export const getSlotStatusMap = (dateStr, bookings, closedSlots, screen, screenMeta = {}) => {
   const map = {};
-  SLOT_HOURS.forEach(h => { map[h] = 'available'; });
+  const seatsBooked = {};
+  
+  SLOT_HOURS.forEach(h => { 
+    map[h] = 'available';
+    seatsBooked[h] = 0;
+  });
+
+  const isShared = screenMeta.type === 'shared';
+  const capacity = screenMeta.max_guests || 6;
 
   // Mark booked — only confirmed/completed bookings block the slot
   bookings.forEach(b => {
@@ -49,7 +58,16 @@ export const getSlotStatusMap = (dateStr, bookings, closedSlots, screen) => {
       if (status === 'confirmed' || status === 'completed') {
         const bookedHours = b.slots || [];
         bookedHours.forEach(h => {
-          if (map[h] !== undefined) map[h] = 'booked';
+          if (map[h] !== undefined) {
+             if (isShared) {
+               seatsBooked[h] += Number(b.guest_count || 1);
+               if (seatsBooked[h] >= capacity) {
+                 map[h] = 'booked';
+               }
+             } else {
+               map[h] = 'booked';
+             }
+          }
         });
       }
     }

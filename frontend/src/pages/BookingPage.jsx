@@ -23,6 +23,7 @@ const BookingPage = () => {
   // Booking state
   const [selectedDate, setSelectedDate] = useState(getTodayStr());
   const [selectedScreen, setSelectedScreen] = useState('Screen 1');
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const screens = ['Screen 1', 'Screen 2', 'TV Screen'];
   const [selectedSlots, setSelectedSlots] = useState([]);
   const [slotStatus, setSlotStatus] = useState({});
@@ -48,8 +49,7 @@ const BookingPage = () => {
 
   useEffect(() => {
     if (step === 2) {
-      fetchSlotAvailability();
-      fetchPricing();
+      fetchPricing().then(pm => fetchSlotAvailability(pm));
     }
   }, [step, selectedDate, selectedScreen]);
 
@@ -75,12 +75,14 @@ const BookingPage = () => {
         const data = snap.docs[0].data();
         if (data.screens) {
           setPricingMap(data.screens);
+          return data.screens;
         }
       }
     } catch (err) { console.error(err); }
+    return {};
   };
 
-  const fetchSlotAvailability = async () => {
+  const fetchSlotAvailability = async (currentPricingMap) => {
     setLoading(true);
     try {
       const bookingsQ = query(collection(db, 'bookings'), where('booking_date', '==', selectedDate));
@@ -91,7 +93,7 @@ const BookingPage = () => {
       const closedSnap = await getDocs(closedQ);
       const closedSlots = closedSnap.docs.map(d => d.data());
 
-      setSlotStatus(getSlotStatusMap(selectedDate, bookings, closedSlots, selectedScreen));
+      setSlotStatus(getSlotStatusMap(selectedDate, bookings, closedSlots, selectedScreen, currentPricingMap[selectedScreen] || {}));
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -137,11 +139,15 @@ const BookingPage = () => {
   // ─── Booking handler ───
   const handleBooking = async () => {
     if (selectedSlots.length === 0) return alert('Please select at least one slot.');
+    if (!termsAccepted) return alert('You must agree to the Terms & Conditions to proceed.');
     setLoading(true);
     try {
       const currentScreenPricing = pricingMap[selectedScreen] || pricingMap['Screen 1'];
       const slotPrice = currentScreenPricing[membershipType] || currentScreenPricing.non_member;
-      const totalPrice = slotPrice * selectedSlots.length;
+      let totalPrice = slotPrice * selectedSlots.length;
+      if (currentScreenPricing.pricing_type === 'per_person') {
+        totalPrice = totalPrice * guestCount;
+      }
       const slotDisplay = formatSlotsDisplay(selectedSlots);
       const dateObj = new Date(selectedDate + 'T00:00:00');
       const dateFormatted = dateObj.toLocaleDateString('en-IN', {
@@ -162,6 +168,7 @@ const BookingPage = () => {
         price: totalPrice,
         is_member: isMember,
         status: 'pending',
+        terms_accepted: termsAccepted,
         created_at: serverTimestamp(),
       });
 
@@ -461,8 +468,15 @@ const BookingPage = () => {
                   </div>
                 </div>
 
-                <button onClick={handleBooking} disabled={selectedSlots.length === 0 || loading}
-                  className={`gold-button w-full py-5 uppercase tracking-widest font-black text-xs flex items-center justify-center gap-2 ${selectedSlots.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                <div className="flex items-center gap-3 bg-white/5 p-4 rounded-xl border border-white/10 mt-4 mb-2">
+                  <input type="checkbox" id="terms" checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} className="w-5 h-5 accent-accent cursor-pointer" />
+                  <label htmlFor="terms" className="text-sm text-white/70">
+                    I agree to the <a href="/terms" target="_blank" rel="noreferrer" className="text-accent underline font-bold hover:text-accent/80 transition-colors">Terms & Conditions</a>
+                  </label>
+                </div>
+
+                <button onClick={handleBooking} disabled={selectedSlots.length === 0 || loading || !termsAccepted}
+                  className={`gold-button w-full py-5 uppercase tracking-widest font-black text-xs flex items-center justify-center gap-2 ${(selectedSlots.length === 0 || !termsAccepted) ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <MessageCircle size={14} />
                   {loading ? 'Processing...' : 'Confirm & Send on WhatsApp'}

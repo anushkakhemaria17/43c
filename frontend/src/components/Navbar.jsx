@@ -16,7 +16,8 @@ const Navbar = () => {
   }
 
   return (
-    <nav className="fixed w-full z-50 bg-[#05071A]/80 backdrop-blur-lg border-b border-[#D4A95F]/10">
+    <>
+      <nav className="fixed top-0 left-0 w-full z-[9999] bg-[#05071A]/90 backdrop-blur-lg border-b border-[#D4A95F]/10">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16 md:h-20">
           <Link to="/" className="flex items-center gap-2 flex-shrink-0">
@@ -84,27 +85,58 @@ const Navbar = () => {
             </button>
           </div>
         </div>
-      </div>
+        </div>
+      </nav>
 
-      {/* Mobile menu */}
-      <div className={`md:hidden transition-all duration-300 overflow-hidden ${isOpen ? 'max-h-[500px] border-b border-accent/10' : 'max-h-0'}`}>
-        <div className="px-4 pt-2 pb-6 space-y-4 bg-[#05071A]">
-          <Link to="/book" className="block text-lg font-heading" onClick={() => setIsOpen(false)}>Book Slot</Link>
-          <Link to="/menu" className="block text-lg font-heading text-accent" onClick={() => setIsOpen(false)}>Food Menu</Link>
-          <Link to="/membership" className="block text-lg font-heading text-accent" onClick={() => setIsOpen(false)}>Membership</Link>
-          <Link to="/my-bookings" className="block text-lg font-heading" onClick={() => setIsOpen(false)}>My Bookings</Link>
-          <Link to="/contact" className="block text-lg font-heading" onClick={() => setIsOpen(false)}>Contact Us</Link>
-          {customer?.is_staff && (
-            <Link to="/admin" className="block text-lg font-heading text-accent" onClick={() => setIsOpen(false)}>Control Panel</Link>
+      {/* Mobile drawer backdrop */}
+      {isOpen && (
+        <div 
+          className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] transition-opacity"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+          onClick={() => setIsOpen(false)}
+        />
+      )}
+
+      {/* Mobile drawer */}
+      <div className={`md:hidden fixed top-0 right-0 h-[100dvh] w-[280px] bg-[#05071A] border-l border-[#D4A95F]/20 z-[99999] transform transition-transform duration-300 ease-in-out flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className="p-4 flex justify-between items-center border-b border-[#D4A95F]/10 bg-[#05071A]">
+          <span className="text-[#D4A95F] font-heading text-xl font-bold tracking-widest uppercase">Menu</span>
+          <button onClick={() => setIsOpen(false)} className="text-accent p-2 rounded-lg hover:bg-white/5 active:bg-white/10 transition-colors">
+            <X size={26} />
+          </button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto px-6 py-8 space-y-6 flex flex-col bg-[#05071A]">
+          <Link to="/book" className="text-lg font-heading tracking-wider py-2" onClick={() => setIsOpen(false)}>Book Slot</Link>
+          <Link to="/menu" className="text-lg font-heading text-accent tracking-wider py-2 flex items-center gap-3" onClick={() => setIsOpen(false)}>Food Menu</Link>
+          <Link to="/membership" className="text-lg font-heading text-accent tracking-wider py-2 flex items-center gap-3" onClick={() => setIsOpen(false)}>
+            <Crown size={18} /> Membership
+          </Link>
+          {customer && (
+            <Link to="/my-bookings" className="text-lg font-heading tracking-wider py-2 flex items-center gap-3" onClick={() => setIsOpen(false)}>
+              <User size={18} /> My Bookings
+            </Link>
           )}
+          <Link to="/contact" className="text-lg font-heading tracking-wider py-2" onClick={() => setIsOpen(false)}>Contact Us</Link>
+          {customer?.is_staff && (
+            <Link to="/admin" className="text-lg font-heading text-accent tracking-wider py-2" onClick={() => setIsOpen(false)}>Control Panel</Link>
+          )}
+        </div>
+
+        <div className="p-6 border-t border-[#D4A95F]/10 bg-[#05071A]">
           {customer ? (
-            <button onClick={() => { logout(); setIsOpen(false); navigate('/'); }} className="w-full text-left text-red-400 font-bold py-2">Logout</button>
+            <div className="space-y-4">
+              <div className="text-sm text-gray-400 px-2 truncate">Logged in as {customer.name}</div>
+              <button onClick={() => { logout(); setIsOpen(false); navigate('/'); }} className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-500 font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-colors min-h-[44px]">
+                <LogOut size={18} /> Logout
+              </button>
+            </div>
           ) : (
-            <Link to="/book" className="gold-button w-full text-center block" onClick={() => setIsOpen(false)}>Login</Link>
+            <Link to="/book" className="gold-button w-full text-center block !py-3 rounded-xl min-h-[44px]" onClick={() => setIsOpen(false)}>Login</Link>
           )}
         </div>
       </div>
-    </nav>
+    </>
   );
 };
 

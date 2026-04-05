@@ -78,7 +78,12 @@ const MenuPage = () => {
       return n;
     });
 
-  const getPrice = (item) => isMember ? item.member_price : item.non_member_price;
+  const getBasePrice = (item) => isMember ? item.member_price : item.non_member_price;
+  const getPrice = (item) => {
+    const base = getBasePrice(item);
+    if (item.discount > 0) return Math.round(base - (base * item.discount / 100));
+    return base;
+  };
 
   const getCartTotal = () =>
     Object.values(cart).reduce((sum, item) => sum + getPrice(item) * item.qty, 0);
@@ -204,10 +209,10 @@ const MenuPage = () => {
       )}
 
       {/* ── Category Tabs ── */}
-      <div className="flex gap-2 overflow-x-auto pb-4 mb-8 scrollbar-hide">
+      <div className="flex flex-col md:flex-row md:flex-wrap gap-3 pb-4 mb-8">
         {categories.map(c => (
           <button key={c} onClick={() => setSelectedCat(c)}
-            className={`px-5 py-2.5 rounded-xl border whitespace-nowrap text-xs font-bold transition-all flex-shrink-0 ${selectedCat === c ? 'bg-accent border-accent text-primary' : 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:border-white/30'}`}
+            className={`px-5 py-3 md:py-2.5 rounded-xl border whitespace-nowrap text-sm md:text-xs font-bold transition-all min-h-[44px] text-left md:text-center ${selectedCat === c ? 'bg-accent border-accent text-primary' : 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:border-white/30'}`}
           >{c}</button>
         ))}
       </div>
@@ -234,7 +239,7 @@ const MenuPage = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6">
                 {items.map(item => {
                   const price = getPrice(item);
                   const inCart = cart[item.id]?.qty || 0;
@@ -260,6 +265,11 @@ const MenuPage = () => {
                           </div>
                         )}
                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none"></div>
+                        {item.discount > 0 && (
+                          <div className="absolute top-2 left-2 bg-red-500 text-white text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-lg">
+                            {item.discount}% OFF
+                          </div>
+                        )}
                       </div>
 
                       {/* Content */}
@@ -268,23 +278,24 @@ const MenuPage = () => {
                         <div className="flex justify-between items-center mt-auto pt-3 border-t border-white/10">
                           <div>
                             <p className={`text-xl font-bold font-heading ${isMember ? 'text-accent' : 'text-white'}`}>₹{price}</p>
-                            {isMember && item.non_member_price && item.non_member_price !== item.member_price && (
+                            {/* Show original if discounted or if member gets a discount from base price */}
+                            {(item.discount > 0 || (isMember && item.non_member_price && item.non_member_price !== item.member_price)) && (
                               <p className="text-[9px] text-white/30 line-through">₹{item.non_member_price}</p>
                             )}
                           </div>
                           {inCart > 0 ? (
-                            <div className="flex items-center gap-2 bg-white/10 rounded-xl p-1 border border-white/20">
-                              <button onClick={() => removeFromCart(item.id)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-black/20 text-white hover:bg-black/40">
-                                <Minus size={13} />
+                            <div className="flex items-center gap-3 bg-white/10 rounded-xl p-1 border border-white/20">
+                              <button onClick={() => removeFromCart(item.id)} className="w-11 h-11 md:w-9 md:h-9 flex items-center justify-center rounded-lg bg-black/20 text-white hover:bg-black/40 transition-colors">
+                                <Minus size={16} />
                               </button>
-                              <span className="w-5 text-center font-bold text-sm">{inCart}</span>
-                              <button onClick={() => addToCart(item)} className="w-7 h-7 flex items-center justify-center rounded-lg bg-accent text-primary hover:bg-accent/80">
-                                <Plus size={13} />
+                              <span className="w-6 text-center font-bold text-base">{inCart}</span>
+                              <button onClick={() => addToCart(item)} className="w-11 h-11 md:w-9 md:h-9 flex items-center justify-center rounded-lg bg-accent text-primary hover:bg-accent/80 transition-colors">
+                                <Plus size={16} />
                               </button>
                             </div>
                           ) : (
-                            <button onClick={() => addToCart(item)} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white/5 border border-white/10 hover:bg-accent hover:border-accent text-white hover:text-primary transition-all">
-                              <Plus size={16} />
+                            <button onClick={() => addToCart(item)} className="w-11 h-11 md:w-9 md:h-9 flex items-center justify-center rounded-xl bg-white/5 border border-white/10 hover:bg-accent hover:border-accent text-white hover:text-primary transition-all">
+                              <Plus size={18} />
                             </button>
                           )}
                         </div>
@@ -364,12 +375,12 @@ const MenuPage = () => {
                         <p className="text-[10px] text-accent">₹{getPrice(item)} each</p>
                       </div>
                       <div className="flex items-center gap-3 bg-white/5 rounded-lg p-1 border border-white/10">
-                        <button onClick={() => removeFromCart(item.id)} className="w-7 h-7 flex items-center justify-center text-white/60 hover:text-white">
-                          <Minus size={13} />
+                        <button onClick={() => removeFromCart(item.id)} className="w-10 h-10 md:w-8 md:h-8 flex items-center justify-center text-white hover:text-white rounded-md bg-black/30 hover:bg-black/50 transition-colors">
+                          <Minus size={16} />
                         </button>
-                        <span className="w-4 text-center font-bold text-sm">{item.qty}</span>
-                        <button onClick={() => addToCart(item)} className="w-7 h-7 flex items-center justify-center text-white/60 hover:text-accent">
-                          <Plus size={13} />
+                        <span className="w-6 text-center font-bold text-base">{item.qty}</span>
+                        <button onClick={() => addToCart(item)} className="w-10 h-10 md:w-8 md:h-8 flex items-center justify-center text-primary hover:text-primary rounded-md bg-accent hover:bg-accent/80 transition-colors">
+                          <Plus size={16} />
                         </button>
                       </div>
                     </div>

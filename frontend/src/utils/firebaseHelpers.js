@@ -119,8 +119,10 @@ export const sendBookingConfirmedWhatsApp = ({ customerMobile, customerName, slo
   const slotLabels = formatSlotsDisplay(slots);
   const remaining = totalAmount - (advancePaid || 0);
   const msg =
-    `✅ Your booking at 43C is confirmed!\nDate: ${date}\nSlots: ${slotLabels}\nGuests: ${guests}\n\n` +
-    `Total: ₹${totalAmount}\nAdvance Paid: ₹${advancePaid || 0}\nRemaining to pay on arrival: ₹${remaining}\n\nEnjoy your cinematic experience! 🎬`;
+    `Dear ${customerName},\n\nYour booking at 43C is confirmed.\n\n` +
+    `Date: ${date}\nSlots: ${slotLabels}\nGuests: ${guests}\n\n` +
+    `Advance Paid: ₹${advancePaid || 0}\nRemaining: ₹${remaining}\n\n` +
+    `We look forward to hosting you.`;
   const number = customerMobile.replace(/\D/g, '');
   const wa = number.startsWith('91') ? number : `91${number}`;
   window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`, '_blank');

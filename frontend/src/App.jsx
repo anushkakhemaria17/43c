@@ -12,6 +12,7 @@ import PreviousBookings from './pages/PreviousBookings';
 import MenuPage from './pages/MenuPage';
 import ContactPage from './pages/ContactPage';
 import AdminVerify from './pages/AdminVerify';
+import TermsPage from './pages/TermsPage';
 
 function App() {
   return (
@@ -27,6 +28,7 @@ function App() {
             <Route path="/membership" element={<Membership />} />
             <Route path="/my-bookings" element={<PreviousBookings />} />
             <Route path="/contact" element={<ContactPage />} />
+            <Route path="/terms" element={<TermsPage />} />
             <Route path="/admin-login" element={<AdminLogin />} />
             <Route path="/admin/verify/:id" element={<AdminVerify />} />
             <Route path="/admin/*" element={<AdminDashboard />} />
