@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { useLocation } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { collection, getDocs, addDoc, query, where, serverTimestamp } from 'firebase/firestore';
 import { Calendar, Clock, Users, CheckCircle2, MessageCircle } from 'lucide-react';
@@ -12,6 +13,7 @@ import { createNotification } from '../utils/firebaseHelpers';
 
 const BookingPage = () => {
   const { customer, checkMobile, login, register } = useAuth();
+  const location = useLocation();
 
   // Auth flow: 'mobile' | 'register' | 'done'
   const [authMode, setAuthMode] = useState('mobile');
@@ -40,6 +42,19 @@ const BookingPage = () => {
   // Confirmed booking info
   const [confirmedBooking, setConfirmedBooking] = useState(null);
 
+  // Coupon state
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponError, setCouponError] = useState('');
+
+  // Combo state
+  const [combos, setCombos] = useState([]);
+  const [selectedCombo, setSelectedCombo] = useState(null);
+
+  useEffect(() => {
+    fetchCombos();
+  }, []);
+
   useEffect(() => {
     if (customer) {
       setStep(2);
@@ -48,10 +63,33 @@ const BookingPage = () => {
   }, [customer]);
 
   useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const comboId = params.get('comboId');
+    if (comboId && combos.length > 0) {
+      const found = combos.find(c => c.id === comboId);
+      if (found) {
+        setSelectedCombo(found);
+        if (found.screen_type !== 'All') {
+          setSelectedScreen(found.screen_type);
+        }
+        setGuestCount(found.max_guests || 2);
+      }
+    }
+  }, [combos, location.search]);
+
+  useEffect(() => {
     if (step === 2) {
       fetchPricing().then(pm => fetchSlotAvailability(pm));
     }
   }, [step, selectedDate, selectedScreen]);
+
+  const fetchCombos = async () => {
+    try {
+      const q = query(collection(db, 'combos'), where('is_active', '==', true));
+      const snap = await getDocs(q);
+      setCombos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) { console.error(err); }
+  };
 
   const checkMembership = async () => {
     if (!customer) return;
@@ -100,9 +138,31 @@ const BookingPage = () => {
 
   const toggleSlot = (hour) => {
     if (slotStatus[hour] !== 'available') return;
-    setSelectedSlots(prev =>
-      prev.includes(hour) ? prev.filter(h => h !== hour) : [...prev, hour]
-    );
+    
+    if (selectedCombo && selectedCombo.number_of_slots > 1) {
+      const numSlots = Number(selectedCombo.number_of_slots);
+      // If already selected, clear it
+      if (selectedSlots.includes(hour)) {
+        setSelectedSlots([]);
+        return;
+      }
+
+      // Try to select consecutive slots starting from 'hour'
+      const requested = [];
+      for (let i = 0; i < numSlots; i++) {
+        const h = hour + i;
+        if (h > 23 || slotStatus[h] !== 'available') {
+          alert(`This combo requires ${numSlots} consecutive slots. Some slots in this range are unavailable.`);
+          return;
+        }
+        requested.push(h);
+      }
+      setSelectedSlots(requested);
+    } else {
+      setSelectedSlots(prev =>
+        prev.includes(hour) ? prev.filter(h => h !== hour) : [...prev, hour]
+      );
+    }
   };
 
   // ─── Auth handlers ───
@@ -137,6 +197,53 @@ const BookingPage = () => {
   };
 
   // ─── Booking handler ───
+
+  const currentScreenPricingForApply = pricingMap[selectedScreen] || pricingMap['Screen 1'];
+  const slotPriceForApply = currentScreenPricingForApply[membershipType] || currentScreenPricingForApply.non_member;
+
+  const handleApplyCoupon = async () => {
+    setCouponError('');
+    if (!couponCode.trim()) return;
+    try {
+      const q = query(collection(db, 'coupons'), where('code', '==', couponCode.toUpperCase()));
+      const snap = await getDocs(q);
+      if (snap.empty) {
+        setCouponError('Invalid coupon code');
+        return;
+      }
+      const c = snap.docs[0].data();
+      c.id = snap.docs[0].id;
+
+      if (!c.active) return setCouponError('Coupon is inactive');
+      if (c.applies_to !== 'both' && c.applies_to !== 'booking') return setCouponError('Coupon not valid for bookings');
+      
+      // Total usage limit
+      if (c.max_usage > 0 && (c.used_count || 0) >= c.max_usage) return setCouponError('Coupon total usage limit reached');
+      
+      // Expiry Check (Date-safe)
+      if (c.expiry_date) {
+        const expDate = new Date(c.expiry_date);
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        if (expDate < today) return setCouponError('Coupon has expired');
+      }
+
+      if (c.type === 'free_hour' && selectedSlots.length === 0) return setCouponError('Select slots first');
+
+      // Check usage per user
+      if (c.usage_per_user > 0) {
+        const bQ = query(collection(db, 'bookings'), where('customer_id', '==', customer.id), where('coupon_applied', '==', couponCode.toUpperCase()));
+        const bSnap = await getDocs(bQ);
+        if (bSnap.size >= c.usage_per_user) return setCouponError('You have already used this coupon maximum times');
+      }
+      
+      setAppliedCoupon(c);
+      setCouponError('');
+    } catch (e) {
+      setCouponError('Error applying coupon');
+    }
+  };
+
   const handleBooking = async () => {
     if (selectedSlots.length === 0) return alert('Please select at least one slot.');
     if (!termsAccepted) return alert('You must agree to the Terms & Conditions to proceed.');
@@ -144,10 +251,27 @@ const BookingPage = () => {
     try {
       const currentScreenPricing = pricingMap[selectedScreen] || pricingMap['Screen 1'];
       const slotPrice = currentScreenPricing[membershipType] || currentScreenPricing.non_member;
-      let totalPrice = slotPrice * selectedSlots.length;
+      
+      let baseOriginal = slotPrice * selectedSlots.length;
       if (currentScreenPricing.pricing_type === 'per_person') {
-        totalPrice = totalPrice * guestCount;
+        baseOriginal = baseOriginal * guestCount;
       }
+      const comboOriginal = selectedCombo ? Number(selectedCombo.price) : 0;
+      const totalOriginal = baseOriginal + comboOriginal;
+
+      let discountAmount = 0;
+      if (appliedCoupon) {
+        if (appliedCoupon.type === 'free_hour') {
+          discountAmount = (currentScreenPricing.pricing_type === 'per_person') ? (slotPrice * guestCount) : slotPrice;
+        } else if (appliedCoupon.type === 'percentage') {
+          // Rule: Coupon only on base booking price, NOT combo
+          discountAmount = baseOriginal * Number(appliedCoupon.value) / 100;
+        } else if (appliedCoupon.type === 'amount') {
+          discountAmount = Number(appliedCoupon.value);
+        }
+      }
+      let finalPrice = Math.round(Math.max(0, totalOriginal - discountAmount));
+
       const slotDisplay = formatSlotsDisplay(selectedSlots);
       const dateObj = new Date(selectedDate + 'T00:00:00');
       const dateFormatted = dateObj.toLocaleDateString('en-IN', {
@@ -163,18 +287,27 @@ const BookingPage = () => {
         screen: selectedScreen,
         slots: selectedSlots,
         guest_count: guestCount,
-        original_price: totalPrice,
-        final_price: totalPrice,
-        price: totalPrice,
+        combo_applied: selectedCombo ? { id: selectedCombo.id, name: selectedCombo.name, price: selectedCombo.price } : null,
+        original_price: totalOriginal,
+        final_price: finalPrice,
+        price: finalPrice,
+        coupon_applied: appliedCoupon ? appliedCoupon.code : null,
+        discount_amount: discountAmount,
         is_member: isMember,
         status: 'pending',
         terms_accepted: termsAccepted,
         created_at: serverTimestamp(),
       });
 
+      if (appliedCoupon) {
+        import('firebase/firestore').then(({ updateDoc, doc, increment }) => {
+          updateDoc(doc(db, 'coupons', appliedCoupon.id), { used_count: increment(1) });
+        });
+      }
+
       await addDoc(collection(db, 'payments'), {
         booking_id: bookingRef.id,
-        amount: totalPrice,
+        amount: finalPrice,
         status: 'pending',
         created_at: serverTimestamp(),
       });
@@ -183,7 +316,7 @@ const BookingPage = () => {
       await createNotification({
         userId: customer.id,
         type: 'booking_submitted',
-        message: `Your booking request for ${selectedDate} (${selectedScreen}) has been submitted! Admin will confirm shortly. Total: ₹${totalPrice}`,
+        message: `Your booking request for ${selectedDate} (${selectedScreen}) has been submitted! Admin will confirm shortly. Total: ₹${finalPrice}`,
         bookingId: bookingRef.id,
       });
 
@@ -191,10 +324,10 @@ const BookingPage = () => {
       await createNotification({
         userId: null,
         type: 'new_booking',
-        message: `🆕 New booking from ${customer.name} (${customer.mobile_number}) on ${selectedDate} · ${selectedScreen} · ₹${totalPrice}`,
+        message: `🆕 New booking from ${customer.name} (${customer.mobile_number}) on ${selectedDate} · ${selectedScreen} · ₹${finalPrice}`,
         bookingId: bookingRef.id,
         notifyAdmin: true,
-        adminMessage: `🆕 New Booking: ${customer.name} · ${selectedDate} · ₹${totalPrice}`,
+        adminMessage: `🆕 New Booking: ${customer.name} · ${selectedDate} · ₹${finalPrice}`,
       });
 
       setConfirmedBooking({
@@ -204,16 +337,27 @@ const BookingPage = () => {
         slots: selectedSlots,
         slotDisplay,
         guests: guestCount,
-        price: totalPrice,
+        price: finalPrice,
       });
 
       setStep(3);
 
-      // Open WhatsApp with prefilled booking message
+      // Prefill WhatsApp message as if written by the Customer
       const waNumber = await getWhatsAppNumber();
-      const slotsText = [...selectedSlots].sort((a, b) => a - b)
-        .map(h => getSlotLabel(h)).join(', ');
-      const msg = `I want to make a reservation for the following:\nScreen: ${selectedScreen}\nSlot: ${slotsText}\nDate: ${selectedDate}\nGuests: ${guestCount}`;
+      const slotsText = [...selectedSlots].sort((a, b) => a - b).map(h => getSlotLabel(h)).join(', ');
+      const comboText = selectedCombo ? `\n* Combo Package: ${selectedCombo.name}` : '';
+      const couponText = appliedCoupon ? `\n* Coupon Applied: ${appliedCoupon.code} (-₹${Math.round(discountAmount)})` : '';
+      
+      const msg = `Hi 43C! I'd like to request a reservation:
+      
+* Screen: ${selectedScreen}
+* Date: ${selectedDate}
+* Time Slots: ${slotsText}
+* Number of Guests: ${guestCount}${comboText}${couponText}
+* Total Payable: ₹${finalPrice}
+
+Please let me know how I can confirm this booking. Thanks!`;
+
       window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`, '_blank');
     } catch (err) {
       console.error(err);
@@ -221,9 +365,49 @@ const BookingPage = () => {
     } finally { setLoading(false); }
   };
 
+  const handleResendWhatsApp = async () => {
+    if (!confirmedBooking) return;
+    const waNumber = await getWhatsAppNumber();
+    const comboText = selectedCombo ? `\n* Combo Package: ${selectedCombo.name}` : '';
+    const couponText = appliedCoupon ? `\n* Coupon Applied: ${appliedCoupon.code}` : '';
+    
+    const msg = `Hi 43C! I'd like to request a reservation:
+
+* Screen: ${selectedScreen}
+* Date: ${confirmedBooking.rawDate}
+* Time Slots: ${confirmedBooking.slotDisplay}
+* Number of Guests: ${confirmedBooking.guests}${comboText}${couponText}
+* Total Payable: ₹${confirmedBooking.price}
+
+Please let me know how I can confirm this booking. Thanks!`;
+
+    window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
   const currentScreenPricing = pricingMap[selectedScreen] || pricingMap['Screen 1'];
   const slotPrice = currentScreenPricing[membershipType] || currentScreenPricing.non_member;
-  const totalPrice = slotPrice * selectedSlots.length;
+  
+  let baseBookingPrice = slotPrice * selectedSlots.length;
+  if (currentScreenPricing.pricing_type === 'per_person') {
+    baseBookingPrice = baseBookingPrice * guestCount;
+  }
+
+  const comboPrice = selectedCombo ? Number(selectedCombo.price) : 0;
+  const totalOriginal = baseBookingPrice + comboPrice;
+
+  let discountAmountDisp = 0;
+  if (appliedCoupon) {
+    if (appliedCoupon.type === 'free_hour') {
+      discountAmountDisp = (currentScreenPricing.pricing_type === 'per_person') ? (slotPrice * guestCount) : slotPrice;
+    } else if (appliedCoupon.type === 'percentage') {
+      // RULE: Coupons apply to baseBookingPrice only, NOT combos
+      discountAmountDisp = baseBookingPrice * Number(appliedCoupon.value) / 100;
+    } else if (appliedCoupon.type === 'amount') {
+      discountAmountDisp = Number(appliedCoupon.value);
+    }
+  }
+
+  const finalPriceDisplay = Math.max(0, totalOriginal - discountAmountDisp);
 
   return (
     <div className="pt-28 pb-20 px-4 max-w-4xl mx-auto min-h-screen">
@@ -354,15 +538,52 @@ const BookingPage = () => {
                 <h3 className="text-sm uppercase tracking-widest font-black text-white/60">Select Screen</h3>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {screens.map(screen => (
-                  <button key={screen} onClick={() => { setSelectedScreen(screen); setSelectedSlots([]); }}
-                    className={`py-4 px-2 rounded-xl border text-center transition-all ${selectedScreen === screen ? 'bg-accent border-accent text-primary font-black shadow-[0_0_20px_rgba(212,169,95,0.4)]' : 'bg-white/5 border-white/10 hover:border-accent/40 font-bold'}`}
-                  >
-                    {screen}
-                  </button>
-                ))}
+                {screens.map(screen => {
+                  const isLocked = selectedCombo && selectedCombo.screen_type !== 'All' && selectedCombo.screen_type !== screen;
+                  return (
+                    <button key={screen} 
+                      disabled={isLocked}
+                      onClick={() => { if(!isLocked) { setSelectedScreen(screen); setSelectedSlots([]); } }}
+                      className={`py-4 px-2 rounded-xl border text-center transition-all ${selectedScreen === screen ? 'bg-accent border-accent text-primary font-black shadow-[0_0_20px_rgba(212,169,95,0.4)]' : isLocked ? 'opacity-40 bg-black/40 border-white/5 cursor-not-allowed grayscale' : 'bg-white/5 border-white/10 hover:border-accent/40 font-bold'}`}
+                    >
+                      {screen}
+                      {isLocked && <p className="text-[7px] mt-1 text-white/40 uppercase font-black tracking-tighter">Locked for Combo</p>}
+                    </button>
+                  );
+                })}
               </div>
             </div>
+
+            {combos.length > 0 && (
+              <div className="pt-6 border-t border-white/10">
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-xl">🍹</span>
+                  <h3 className="text-sm uppercase tracking-widest font-black text-white/60">Select A Combo (Optional)</h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  <button
+                    onClick={() => setSelectedCombo(null)}
+                    className={`p-4 rounded-xl border text-left transition-all ${selectedCombo === null ? 'bg-accent/10 border-accent/50 shadow-[0_0_15px_rgba(212,169,95,0.2)]' : 'bg-white/5 border-white/10 hover:border-white/30'}`}
+                  >
+                    <span className="font-bold text-sm block mb-1">No Combo</span>
+                    <span className="text-[10px] text-white/40">Just book the slot</span>
+                  </button>
+                  {combos.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => setSelectedCombo(c)}
+                      className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between ${selectedCombo?.id === c.id ? 'bg-accent/10 border-accent shadow-[0_0_15px_rgba(212,169,95,0.4)]' : 'bg-white/5 border-white/10 hover:border-accent/40'}`}
+                    >
+                      <div>
+                        <span className={`font-bold text-sm block mb-1 ${selectedCombo?.id === c.id ? 'text-accent' : ''}`}>{c.name}</span>
+                        <span className="text-[10px] text-white/50 leading-tight block line-clamp-2 mb-2">{c.description}</span>
+                      </div>
+                      <span className="font-bold text-accent">₹{c.price}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="grid md:grid-cols-3 gap-8">
               {/* Slot Grid */}
@@ -461,9 +682,48 @@ const BookingPage = () => {
                       <span className="text-[10px] uppercase tracking-widest text-white/30">Price/slot</span>
                       <span className="text-sm">₹{slotPrice}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] uppercase tracking-widest text-white/30">Total</span>
-                      <span className="text-xl font-heading gold-text-gradient font-black">₹{totalPrice}</span>
+                    
+                    {selectedCombo && (
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-[10px] uppercase tracking-widest text-white/30">Combo ({selectedCombo.name})</span>
+                        <span className="text-sm">₹{selectedCombo.price}</span>
+                      </div>
+                    )}
+                    
+                    <div className="mt-4 mb-4">
+                      <p className="text-[9px] uppercase tracking-widest text-white/40 mb-2 font-black">Apply Discount Code</p>
+                      <div className="relative group">
+                        <input 
+                          type="text" 
+                          placeholder="Coupon Code" 
+                          value={couponCode} 
+                          onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-3 text-sm uppercase focus:border-accent outline-none pr-24 transition-all"
+                        />
+                        <button 
+                          onClick={handleApplyCoupon} 
+                          className="absolute right-1.5 top-1.5 bottom-1.5 px-5 bg-accent text-primary rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-accent/80 transition-all active:scale-95"
+                        >
+                          Apply
+                        </button>
+                      </div>
+                      {couponError && <p className="text-red-400 text-[10px] mt-2 ml-1">⚠ {couponError}</p>}
+                      {appliedCoupon && <p className="text-green-400 text-[10px] mt-2 ml-1 flex items-center gap-1"><CheckCircle2 size={10} /> Coupon "{appliedCoupon.code}" applied!</p>}
+                    </div>
+
+                    <div className="flex justify-between items-center mt-2">
+                      <span className="text-[10px] uppercase tracking-widest text-white/30">Original Total</span>
+                      <span className="text-sm font-bold">₹{totalOriginal}</span>
+                    </div>
+                    {appliedCoupon && (
+                      <div className="flex justify-between items-center text-green-400 mt-1">
+                        <span className="text-[10px] uppercase tracking-widest">Coupon Discount</span>
+                        <span className="text-sm">-₹{Math.round(discountAmountDisp)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center mt-2 pt-2 border-t border-white/10">
+                      <span className="text-[10px] uppercase tracking-widest text-white/30">Total Payable</span>
+                      <span className="text-xl font-heading gold-text-gradient font-black">₹{Math.round(finalPriceDisplay)}</span>
                     </div>
                   </div>
                 </div>
@@ -537,7 +797,13 @@ const BookingPage = () => {
             </div>
 
             <div className="flex gap-4 justify-center flex-wrap">
-              <button onClick={() => window.location.href = '/my-bookings'} className="gold-button px-8 py-4 uppercase tracking-widest font-black text-xs">My Bookings</button>
+              <button 
+                onClick={handleResendWhatsApp} 
+                className="gold-button px-8 py-4 uppercase tracking-widest font-black text-xs flex items-center gap-2"
+              >
+                <MessageCircle size={14} /> Resend Request to WhatsApp
+              </button>
+              <button onClick={() => window.location.href = '/my-bookings'} className="glass-card px-8 py-4 uppercase tracking-widest font-black text-xs">My Bookings</button>
               <button onClick={() => window.location.href = '/menu'} className="glass-card px-8 py-4 uppercase tracking-widest font-black text-xs border-accent/30 hover:bg-accent/10 transition-colors">Order Food</button>
             </div>
           </motion.div>

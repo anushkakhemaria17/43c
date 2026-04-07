@@ -162,6 +162,11 @@ const PreviousBookings = () => {
                         <span className="font-bold uppercase tracking-widest text-[9px] opacity-70">Cancel Reason:</span> {b.cancel_reason}
                       </div>
                     )}
+                    {b.status === 'confirmed' && (
+                      <div className="mt-3 px-3 py-2 bg-blue-500/10 border border-blue-500/20 rounded-xl text-center">
+                        <p className="text-xs text-blue-400 font-bold">You will get the OTP for entry 30 min before your slot.</p>
+                      </div>
+                    )}
                   </div>
 
                   <Link to={`/receipt/${b.id}`}

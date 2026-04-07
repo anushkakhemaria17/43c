@@ -156,6 +156,13 @@ const ReceiptPage = () => {
                 </div>
               </div>
 
+              {/* OTP Note */}
+              {isConfirmed && (
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 text-center mt-4">
+                  <p className="text-xs text-blue-400 font-bold">You will get the OTP for entry 30 min before your slot.</p>
+                </div>
+              )}
+
               {/* Terms Link */}
               <div className="border-t border-white/5 pt-5 mt-2 text-center no-print">
                 <a href="/terms" target="_blank" rel="noreferrer" className="text-[10px] uppercase tracking-widest text-white/40 hover:text-accent transition-colors underline underline-offset-4 font-bold">

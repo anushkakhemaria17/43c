@@ -100,14 +100,18 @@ export const autoCancelPendingBookings = async (bookings, updateFn) => {
 
 // ── WhatsApp: admin → customer ───────────────────────────────────
 
-export const openAdminWhatsApp = ({ customerMobile, customerName, slots, date, guests, totalAmount }) => {
+export const openAdminWhatsApp = ({ customerMobile, customerName, slots, date, guests, totalAmount, comboName }) => {
   const slotLabels = [...slots].sort((a, b) => a - b).map(h => getSlotLabel(h)).join(', ');
   const advance = Math.ceil(totalAmount * 0.5);
+  const comboSection = comboName ? `\nCombo Package: ${comboName}` : '';
   const msg =
-    `Dear ${customerName},\nWe are glad to welcome you at 43C.\n\n` +
-    `Your selected slot(s): ${slotLabels}\nDate: ${date}\nGuests: ${guests}\n\n` +
-    `To confirm your booking, please pay booking amount  (₹${advance}) and remaning amount on arrival.\n\n` +
-    `Looking forward to hosting you!`;
+    `Dear ${customerName},\n\nWe are glad to welcome you at 43C! ✨\n\n` +
+    `Reservation Details:\n` +
+    `Date: ${date}\n` +
+    `Time: ${slotLabels}\n` +
+    `Guests: ${guests}${comboSection}\n\n` +
+    `To confirm your booking, please pay a 50% advance (₹${advance}). The remaining balance can be paid on arrival.\n\n` +
+    `Please share the payment screenshot to proceed with confirmation. Thanks!`;
   const number = customerMobile.replace(/\D/g, '');
   const wa = number.startsWith('91') ? number : `91${number}`;
   window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`, '_blank');
@@ -115,14 +119,18 @@ export const openAdminWhatsApp = ({ customerMobile, customerName, slots, date, g
 
 // ── WhatsApp: notify customer on confirmation ────────────────────
 
-export const sendBookingConfirmedWhatsApp = ({ customerMobile, customerName, slots, date, guests, totalAmount, advancePaid }) => {
+export const sendBookingConfirmedWhatsApp = ({ customerMobile, customerName, slots, date, guests, totalAmount, advancePaid, comboName }) => {
   const slotLabels = formatSlotsDisplay(slots);
   const remaining = totalAmount - (advancePaid || 0);
+  const comboSection = comboName ? `\nCombo: ${comboName}` : '';
   const msg =
-    `Dear ${customerName},\n\nYour booking at 43C is confirmed.\n\n` +
-    `Date: ${date}\nSlots: ${slotLabels}\nGuests: ${guests}\n\n` +
-    `Advance Paid: ₹${advancePaid || 0}\nRemaining: ₹${remaining}\n\n` +
-    `We look forward to hosting you.`;
+    `Dear ${customerName},\n\nYour booking at 43C is CONFIRMED! ✅\n\n` +
+    `Date: ${date}\n` +
+    `Slots: ${slotLabels}\n` +
+    `Guests: ${guests}${comboSection}\n\n` +
+    `Advance Paid: ₹${advancePaid || 0}\n` +
+    `Remaining on Arrival: ₹${remaining}\n\n` +
+    `Your Entry OTP will be sent to this number 30 mins before your time slot. Have a great experience! ✨`;
   const number = customerMobile.replace(/\D/g, '');
   const wa = number.startsWith('91') ? number : `91${number}`;
   window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`, '_blank');

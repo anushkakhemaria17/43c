@@ -1,8 +1,8 @@
+// Firebase Storage removed for cost optimization. Images are now handled via local static assets.
 import React, { useState, useEffect, useRef } from 'react';
-import { db, storage } from '../lib/firebase';
-import { collection, getDocs, getDoc, addDoc, query, where, serverTimestamp, doc, updateDoc, deleteDoc, setDoc, onSnapshot, orderBy } from 'firebase/firestore';
-import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { LayoutDashboard, Calendar, Users, Wallet, Plus, Clock, UtensilsCrossed, Coffee, CheckCircle2, Lock, X, Settings, Shield, BarChart2, MessageCircle, Bell, Phone, Trash2, Monitor, Upload, ImageIcon, ClipboardList, CheckSquare, Menu, Ticket } from 'lucide-react';
+import { db } from '../lib/firebase';
+import { doc, updateDoc, deleteDoc, addDoc, collection, getDocs, query, where, serverTimestamp, setDoc, onSnapshot } from 'firebase/firestore';
+import { LayoutDashboard, Calendar, Users, Wallet, Plus, Clock, UtensilsCrossed, Coffee, CheckCircle2, Lock, X, Settings, Shield, BarChart2, MessageCircle, Bell, Phone, Trash2, Monitor, ImageIcon, ClipboardList, CheckSquare, Menu, Ticket } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SLOT_HOURS, getSlotLabel, getAvailableDates, getSlotStatusMap, formatSlotsDisplay, getTodayStr } from '../utils/slots';
 import { exportAnalyticsExcel } from '../utils/exportExcel';
@@ -16,6 +16,57 @@ const ORDER_STATUSES = ['pending', 'confirmed', 'served', 'cancelled'];
 const StatusBadge = ({ s }) => {
   const colors = { pending: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30', confirmed: 'text-blue-400 bg-blue-500/10 border-blue-500/30', completed: 'text-green-400 bg-green-500/10 border-green-500/30', served: 'text-green-400 bg-green-500/10 border-green-500/30', cancelled: 'text-red-400 bg-red-500/10 border-red-500/30' };
   return <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${colors[s] || colors.pending}`}>{s}</span>;
+};
+
+const ComboCard = ({ combo, onEdit, onDelete, onToggle, getLocalAsset }) => {
+  return (
+    <div className="glass-card flex flex-col border-accent/20 relative transition-all duration-300 hover:border-accent">
+      <div className={`p-5 flex-1 ${!combo.is_active ? 'opacity-40 grayscale' : ''}`}>
+        <div className="h-32 mb-4 bg-white/5 rounded-xl overflow-hidden border border-white/10">
+          {combo.image_url ? (
+            <img 
+              src={getLocalAsset(combo.image_url, 'combos')} 
+              alt={combo.name} 
+              className="w-full h-full object-cover" 
+              onError={e => { e.target.style.display = 'none'; }} 
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full text-white/10"><ImageIcon size={32} /></div>
+          )}
+        </div>
+        <div className="flex justify-between items-start">
+          <h3 className="text-xl font-heading text-white">{combo.name}</h3>
+          <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${combo.is_active ? 'text-green-400 border-green-500/20 bg-green-500/5' : 'text-red-400 border-red-500/20 bg-red-500/5'}`}>
+            {combo.is_active ? 'Active' : 'Disabled'}
+          </span>
+        </div>
+        <p className="text-accent font-bold mt-1 text-lg">₹{combo.price}</p>
+        <p className="text-[10px] text-white/30 uppercase tracking-widest mt-1">{combo.screen_type || 'Screen 1'} · Max {combo.max_guests || 2} Guests · {combo.number_of_slots || 1} Slots</p>
+        <p className="text-xs text-white/50 mt-2 mb-4 line-clamp-2">{combo.description}</p>
+        <div className="space-y-1">
+          <p className="text-[9px] uppercase tracking-widest text-white/30">Includes:</p>
+          <p className="text-sm font-bold text-white/80">{combo.includes}</p>
+        </div>
+      </div>
+      <div className="border-t border-white/5 p-3 flex gap-2 bg-black/40 rounded-b-2xl">
+        <button 
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggle(combo); }} 
+          className={`flex-1 py-4 rounded-xl border transition-all text-center text-[10px] uppercase font-black tracking-widest ${combo.is_active ? 'border-red-500/20 text-red-400' : 'border-green-500/20 text-green-400'}`}>
+          {combo.is_active ? 'Disable' : 'Activate'}
+        </button>
+        <button 
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(combo); }} 
+          className="flex-1 py-4 bg-blue-500/20 text-blue-400 border border-blue-500/20 text-[10px] uppercase font-black tracking-widest rounded-xl text-center">
+          Edit
+        </button>
+        <button 
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(combo.id); }} 
+          className="px-5 py-4 bg-red-500/10 text-red-500/50 border border-red-500/10 rounded-xl flex items-center justify-center">
+          <Trash2 size={16} />
+        </button>
+      </div>
+    </div>
+  );
 };
 
 const AdminDashboard = () => {
@@ -59,18 +110,16 @@ const AdminDashboard = () => {
   const [bookingForm, setBookingForm] = useState({ name: '', mobile: '', screen: 'Screen 1', slots: [], guest_count: 2, date: getTodayStr() });
   const [bookingSlotStatus, setBookingSlotStatus] = useState({});
   const [showComboModal, setShowComboModal] = useState(false);
-  const [comboForm, setComboForm] = useState({ id: '', name: '', price: '', description: '', includes: '', custom_message: '' });
+  const [comboForm, setComboForm] = useState({ id: '', name: '', price: '', description: '', includes: '', custom_message: '', is_active: true, max_guests: 2, screen_type: 'Screen 1', image_url: '', number_of_slots: 1 });
+  const [editingComboId, setEditingComboId] = useState(null);
   const [combos, setCombos] = useState([]);
+  const [showCouponModal, setShowCouponModal] = useState(false);
+  const [couponForm, setCouponForm] = useState({ id: '', code: '', type: 'percentage', value: '', applies_to: 'both', max_usage: '', used_count: 0, expiry_date: '', active: true, usage_per_user: 1, validity_days: '', screen_applicable: 'All', whatsapp_template: 'Hey! Use coupon code {{code}} to get a special discount at 43C! ✨' });
+  const [coupons, setCoupons] = useState([]);
   const [showMenuModal, setShowMenuModal] = useState(false);
   const [menuForm, setMenuForm] = useState({ id: '', name: '', category: 'Drinks', member_price: '', non_member_price: '', image_url: '', discount: '' });
   const [isEditingMenu, setIsEditingMenu] = useState(false);
-  // Menu image upload state
-  const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState('');
-  const [imageUploading, setImageUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const fileInputRef = useRef(null);
-  // Menu category management
   const [menuCategories, setMenuCategories] = useState(['Drinks', 'Snacks', 'Main Course', 'Desserts', 'Shisha']);
   const [newCategory, setNewCategory] = useState('');
   const [showAddCategory, setShowAddCategory] = useState(false);
@@ -78,9 +127,8 @@ const AdminDashboard = () => {
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [adminForm, setAdminForm] = useState({ name: '', mobile: '', password: '' });
 
-  // New features state
   const [showCancelModal, setShowCancelModal] = useState(false);
-  const [cancelTarget, setCancelTarget] = useState(null); // { id, type: 'booking'|'order' }
+  const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
   const [showAdvanceModal, setShowAdvanceModal] = useState(false);
   const [advanceTarget, setAdvanceTarget] = useState(null);
@@ -90,21 +138,26 @@ const AdminDashboard = () => {
   const [editWaMobile, setEditWaMobile] = useState({});
   const [notifCount, setNotifCount] = useState({ bookings: 0, orders: 0 });
 
-  const [memberFilter, setMemberFilter] = useState('all'); // all | gold | silver | non_member
-  const [memberBookings, setMemberBookings] = useState({}); // customerId -> count
-  const [memberSpend, setMemberSpend] = useState({});    // customerId -> total spend
+  const [memberFilter, setMemberFilter] = useState('all');
+  const [memberBookings, setMemberBookings] = useState({});
+  const [memberSpend, setMemberSpend] = useState({});
   const [showDueModal, setShowDueModal] = useState(false);
   const [dueTarget, setDueTarget] = useState(null);
   const [dueAmount, setDueAmount] = useState('');
   const [newScreenName, setNewScreenName] = useState('');
   const [screens, setScreens] = useState(['Screen 1', 'Screen 2', 'TV Screen']);
 
-  // Task manager state
   const [tasks, setTasks] = useState([]);
   const [taskForm, setTaskForm] = useState({ title: '', time: '10:00' });
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const [selectedTaskDate, setSelectedTaskDate] = useState(getTodayStr());
+
+  const getLocalAsset = (path, section) => {
+    if (!path) return '';
+    if (path.startsWith('http')) return path;
+    return `/assets/${section}/${path}`;
+  };
 
   const fetchTasks = async () => {
     try {
@@ -145,7 +198,6 @@ const AdminDashboard = () => {
   };
 
     useEffect(() => {
-      // Global real-time listener for pending tasks, bookings & food orders counts
       const unsubB = onSnapshot(query(collection(db, 'bookings'), where('status', '==', 'pending')), (snap) => {
         setNotifCount(prev => ({ ...prev, bookings: snap.docs.length }));
       });
@@ -163,7 +215,9 @@ const AdminDashboard = () => {
       if (view === 'expenses') fetchExpenses();
       if (view === 'menu') fetchMenu();
       if (view === 'combos') fetchCombos();
+      if (view === 'coupons') fetchCoupons();
       if (view === 'orders') fetchFoodOrders();
+      if (view === 'tasks_live') { fetchFoodOrders(); fetchAllBookings(); }
       if (view === 'analytics') fetchAnalyticsView();
       if (view === 'settings') fetchSettings();
       if (view === 'tasks') { fetchTasks(); fetchAllBookings(); }
@@ -183,9 +237,10 @@ const AdminDashboard = () => {
           setPricingMap(loadedMap);
           setScreens(Object.keys(loadedMap));
         }
-        const tSnap = await getDoc(doc(db, 'terms_conditions', 'default'));
-        if (tSnap.exists() && tSnap.data().content) {
-          setTermsText(tSnap.data().content);
+        const tSnap = await getDocs(collection(db, 'terms_conditions'));
+        const tDoc = tSnap.docs.find(d => d.id === 'default');
+        if (tDoc && tDoc.data().content) {
+          setTermsText(tDoc.data().content);
         } else {
           setTermsText("43C Lounge – Terms & Conditions\n\nBy proceeding with a booking, you agree to the following:\n\nNo Smoking & No Alcohol\nSmoking and alcohol consumption are strictly prohibited inside the premises.\nA fine of ₹500 will be charged if found smoking.\n\nNo Outside Food\nOutside food and beverages are not allowed.\n\nBehavior Policy\nAny inappropriate, rude, or unacceptable behavior will not be tolerated.\n\nDamage Policy\nAny damage to property must be paid for by the customer.\n\nLegal Action\n43C reserves the right to take strict or legal action in case of misconduct.\n\nResponsibility Clause\nThe person making the booking is fully responsible for all accompanying guests.\n\nNo Refund Policy\nNo refunds will be provided in case of cancellation or no-show.\n\nRight to Refuse Service\nManagement reserves the right to deny or cancel bookings if rules are violated.");
         }
@@ -292,8 +347,10 @@ const AdminDashboard = () => {
       setLoading(true);
       try {
         const snap = await getDocs(collection(db, 'bookings'));
-        const raw = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        // Sort: pending first (oldest), then others by date desc
+        const raw = snap.docs.map(d => {
+          const data = d.data();
+          return { id: d.id, ...data };
+        });
         raw.sort((a, b) => {
           if (a.status === 'pending' && b.status !== 'pending') return -1;
           if (b.status === 'pending' && a.status !== 'pending') return 1;
@@ -302,7 +359,6 @@ const AdminDashboard = () => {
           }
           return b.booking_date < a.booking_date ? -1 : 1;
         });
-        setBookings(raw);
         setBookings(raw);
         await autoCompleteBookings(raw, (id, status) =>
           setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b))
@@ -361,7 +417,10 @@ const AdminDashboard = () => {
     const fetchMenu = async () => {
       try {
         const snap = await getDocs(collection(db, 'menu_items'));
-        setMenuItems(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setMenuItems(snap.docs.map(d => {
+          const data = d.data();
+          return { id: d.id, ...data };
+        }));
 
         const catSnap = await getDocs(collection(db, 'settings'));
         const catDoc = catSnap.docs.find(d => d.id === 'menu_categories');
@@ -382,25 +441,46 @@ const AdminDashboard = () => {
     const fetchCombos = async () => {
       try {
         const snap = await getDocs(collection(db, 'combos'));
-        setCombos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setCombos(snap.docs.map(d => {
+          const data = d.data();
+          return { id: d.id, ...data };
+        }));
       } catch (e) { console.error(e); }
     };
 
     const saveCombo = async (e) => {
       e.preventDefault();
       try {
-        if (comboForm.id) {
-          await updateDoc(doc(db, 'combos', comboForm.id), {
-            name: comboForm.name, price: Number(comboForm.price), description: comboForm.description, includes: comboForm.includes, custom_message: comboForm.custom_message
-          });
+        setLoading(true);
+        const comboData = {
+          name: comboForm.name || '',
+          price: Number(comboForm.price || 0),
+          description: comboForm.description || '',
+          includes: comboForm.includes || '',
+          custom_message: comboForm.custom_message || '',
+          is_active: comboForm.is_active ?? true,
+          max_guests: Number(comboForm.max_guests || 2),
+          number_of_slots: Number(comboForm.number_of_slots || 1),
+          screen_type: comboForm.screen_type || 'Screen 1',
+          image_url: comboForm.image_url || '',
+          updated_at: serverTimestamp()
+        };
+
+        if (editingComboId) {
+          await updateDoc(doc(db, 'combos', editingComboId), comboData);
         } else {
           await addDoc(collection(db, 'combos'), {
-            ...comboForm, price: Number(comboForm.price), created_at: serverTimestamp()
+            ...comboData,
+            created_at: serverTimestamp()
           });
         }
         setShowComboModal(false);
+        setEditingComboId(null);
         fetchCombos();
-      } catch (e) { alert('Failed'); }
+      } catch (err) { 
+        console.error('Save Combo Error:', err);
+        alert('Failed: ' + err.message); 
+      } finally { setLoading(false); }
     };
 
     const deleteCombo = async (id) => {
@@ -408,13 +488,183 @@ const AdminDashboard = () => {
       try { await deleteDoc(doc(db, 'combos', id)); fetchCombos(); } catch (e) { }
     };
 
+    const toggleComboActive = async (combo) => {
+      try {
+        await updateDoc(doc(db, 'combos', combo.id), { is_active: !combo.is_active });
+        fetchCombos();
+      } catch (e) { alert('Failed to toggle status'); }
+    };
+
+    const fetchCoupons = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'coupons'));
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setCoupons(list);
+      } catch (e) { 
+        console.error('Fetch Coupons Error:', e);
+      }
+    };
+
+    const saveCoupon = async (e) => {
+      e.preventDefault();
+      setLoading(true);
+      try {
+        const cleanCode = (couponForm.code || '').trim().toUpperCase();
+        if (!cleanCode) {
+          setLoading(false);
+          return alert('Coupon code is required.');
+        }
+
+        // Rule: Same active code cannot exist twice
+        if (couponForm.active) {
+          const conflict = coupons.find(c => 
+            c.code.toUpperCase() === cleanCode && 
+            c.active && 
+            c.id !== couponForm.id
+          );
+          if (conflict) {
+            setLoading(false);
+            return alert(`A coupon with code "${cleanCode}" is already active. Deactivate or edit the existing one instead.`);
+          }
+        }
+
+        const { id, ...formData } = couponForm;
+        const dataToSave = {
+          ...formData,
+          code: cleanCode,
+          value: Number(formData.value || 0),
+          max_usage: Number(formData.max_usage || 0),
+          used_count: Number(formData.used_count || 0),
+          usage_per_user: Number(formData.usage_per_user || 1),
+          validity_days: formData.validity_days ? Number(formData.validity_days) : null,
+          updated_at: serverTimestamp()
+        };
+        
+        if (id && id !== '') {
+          await updateDoc(doc(db, 'coupons', id), dataToSave);
+          alert('Coupon updated successfully!');
+        } else {
+          await addDoc(collection(db, 'coupons'), { 
+            ...dataToSave, 
+            created_at: serverTimestamp(), 
+            used_count: 0 
+          });
+          alert('New coupon created!');
+        }
+        
+        setShowCouponModal(false);
+        fetchCoupons();
+      } catch (e) { 
+        console.error('Save Coupon Error:', e);
+        alert('Failed to save coupon: ' + e.message); 
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const deleteCoupon = async (id) => {
+      if (!id) return;
+      if (!window.confirm('Are you sure you want to delete this coupon? This action cannot be undone.')) return;
+      try {
+        await deleteDoc(doc(db, 'coupons', id));
+        alert('Coupon deleted successfully.');
+        fetchCoupons();
+      } catch (e) { 
+        console.error('Delete Coupon Error:', e);
+        alert('Failed to delete: ' + e.message);
+      }
+    };
+
+    const toggleCouponActive = async (coupon) => {
+      try {
+        const newStatus = !coupon.active;
+        if (newStatus) {
+          // Check for conflicts before enabling
+          const conflict = coupons.find(c => 
+            c.code.toUpperCase() === coupon.code.toUpperCase() && 
+            c.active && 
+            c.id !== coupon.id
+          );
+          if (conflict) {
+            return alert(`Cannot enable. Code "${coupon.code}" is already active in another coupon.`);
+          }
+        }
+
+        await updateDoc(doc(db, 'coupons', coupon.id), { active: newStatus });
+        fetchCoupons();
+      } catch (e) {
+        console.error('Toggle Coupon Error:', e);
+        alert('Failed to update status: ' + e.message);
+      }
+    };
+
+    const resetCoupon = async (coupon) => {
+      try {
+        // Resetting used count and ensuring it is active
+        const conflict = coupons.find(c => 
+          c.code.toUpperCase() === coupon.code.toUpperCase() && 
+          c.active && 
+          c.id !== coupon.id
+        );
+        if (conflict) return alert(`Cannot enable/reset. Another active coupon with code "${coupon.code}" exists.`);
+
+        await updateDoc(doc(db, 'coupons', coupon.id), { used_count: 0, active: true });
+        alert('Coupon usage reset to 0.');
+        fetchCoupons();
+      } catch (e) { 
+        console.error('Reset Coupon Error:', e);
+        alert('Failed to reset'); 
+      }
+    };
+
     const fetchAdmins = async () => {
       try { const snap = await getDocs(collection(db, 'admins')); setAdmins(snap.docs.map(d => ({ id: d.id, ...d.data() }))); } catch (e) { console.error(e); }
     };
 
+    const deleteBooking = async (id) => {
+      if (!window.confirm('PERMANENTLY DELETE this booking? This cannot be undone.')) return;
+      try {
+        await deleteDoc(doc(db, 'bookings', id));
+        setBookings(prev => prev.filter(b => b.id !== id));
+        alert('Booking deleted permanently.');
+      } catch (e) {
+        alert('Delete failed: ' + e.message);
+      }
+    };
+
     const updateBookingStatus = async (id, status) => {
-      await updateDoc(doc(db, 'bookings', id), { status });
-      setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b));
+      try {
+        await updateDoc(doc(db, 'bookings', id), { status });
+        setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b));
+        
+        if (status === 'confirmed') {
+          const b = bookings.find(x => x.id === id);
+          if (b) {
+            // 1. In-app notification
+            await createNotification({
+              userId: b.customer_id,
+              type: 'booking_confirmed',
+              message: `Your booking for ${b.booking_date} (${b.screen}) has been CONFIRMED! See you soon. ✨`,
+              bookingId: id
+            });
+
+            // 2. Open WhatsApp for Admin to send official confirmation
+            sendBookingConfirmedWhatsApp({
+              customerMobile: b.customer_mobile,
+              customerName: b.customer_name,
+              slots: b.slots,
+              date: b.booking_date,
+              guests: b.guest_count,
+              totalAmount: b.final_price || b.price,
+              advancePaid: b.advance_paid || 0,
+              comboName: b.combo_applied?.name
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Status update error:', err);
+        alert('Failed to update status');
+      }
     };
 
     const updateBookingPrice = async (id, finalPrice) => {
@@ -454,73 +704,62 @@ const AdminDashboard = () => {
         const totalPrice = 499 * bookingForm.slots.length;
         const bRef = await addDoc(collection(db, 'bookings'), { customer_id: custId, customer_name: bookingForm.name, customer_mobile: bookingForm.mobile, booking_date: bookingForm.date, screen: bookingForm.screen, slots: bookingForm.slots, guest_count: bookingForm.guest_count, original_price: totalPrice, final_price: totalPrice, price: totalPrice, status: 'confirmed', created_at: serverTimestamp() });
         await addDoc(collection(db, 'payments'), { booking_id: bRef.id, amount: totalPrice, status: 'confirmed', created_at: serverTimestamp() });
-        alert('Booking created.'); setShowBookingModal(false); setBookingForm({ name: '', mobile: '', screen: 'Screen 1', slots: [], guest_count: 2, date: getTodayStr() });
+        
+        // 🆕 Notify Customer
+        await createNotification({
+          userId: custId,
+          type: 'booking_confirmed',
+          message: `Your manual booking at 43C is confirmed! Date: ${bookingForm.date}, Slots: ${formatSlotsDisplay(bookingForm.slots)}. Enjoy your cinematic experience! ✨`,
+          bookingId: bRef.id
+        });
+
+        // 🆕 Trigger WhatsApp Confirmation
+        sendBookingConfirmedWhatsApp({
+          customerMobile: bookingForm.mobile,
+          customerName: bookingForm.name,
+          slots: bookingForm.slots,
+          date: bookingForm.date,
+          guests: bookingForm.guest_count,
+          totalAmount: totalPrice
+        });
+
+        alert('Booking created and confirmed.'); setShowBookingModal(false); setBookingForm({ name: '', mobile: '', screen: 'Screen 1', slots: [], guest_count: 2, date: getTodayStr() });
         if (view === 'bookings') fetchAllBookings();
       } catch (e) { alert('Failed: ' + e.message); }
-    };
-
-    // Upload image file to Firebase Storage and return download URL
-    const uploadMenuImage = (file) => new Promise((resolve, reject) => {
-      const ext = file.name.split('.').pop();
-      const path = `menu_images/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const sRef = storageRef(storage, path);
-      const task = uploadBytesResumable(sRef, file);
-      task.on('state_changed',
-        (snap) => setUploadProgress(Math.round(snap.bytesTransferred / snap.totalBytes * 100)),
-        reject,
-        () => getDownloadURL(task.snapshot.ref).then(resolve).catch(reject)
-      );
-    });
-
-    const handleImageSelect = (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      if (!file.type.startsWith('image/')) return alert('Please select an image file.');
-      if (file.size > 5 * 1024 * 1024) return alert('Image must be under 5MB.');
-      setImageFile(file);
-      setImagePreview(URL.createObjectURL(file));
     };
 
     const saveMenu = async (e) => {
       e.preventDefault();
       try {
-        let imageUrl = menuForm.image_url;
-        // Upload new image if selected
-        if (imageFile) {
-          setImageUploading(true);
-          setUploadProgress(0);
-          imageUrl = await uploadMenuImage(imageFile);
-          setImageUploading(false);
-        }
-        if (isEditingMenu) {
-          await updateDoc(doc(db, 'menu_items', menuForm.id), {
-            name: menuForm.name,
-            category: menuForm.category,
-            member_price: Number(menuForm.member_price),
-            non_member_price: Number(menuForm.non_member_price),
-            discount: Number(menuForm.discount) || 0,
-            image_url: imageUrl
-          });
+        setLoading(true);
+        const data = {
+          name: menuForm.name || '',
+          category: menuForm.category || 'Drinks',
+          member_price: Number(menuForm.member_price || 0),
+          non_member_price: Number(menuForm.non_member_price || 0),
+          discount: Number(menuForm.discount) || 0,
+          image_url: menuForm.image_url || '',
+          updated_at: serverTimestamp()
+        };
+
+        if (isEditingMenu && menuForm.id) {
+          await updateDoc(doc(db, 'menu_items', menuForm.id), data);
         } else {
           await addDoc(collection(db, 'menu_items'), {
-            name: menuForm.name,
-            category: menuForm.category,
-            image_url: imageUrl,
-            member_price: Number(menuForm.member_price),
-            non_member_price: Number(menuForm.non_member_price),
-            discount: Number(menuForm.discount) || 0,
+            ...data,
             available: true,
             created_at: serverTimestamp(),
           });
         }
         setShowMenuModal(false);
         setMenuForm({ id: '', name: '', category: menuCategories[0] || 'Drinks', member_price: '', non_member_price: '', discount: '', image_url: '' });
-        setImageFile(null); setImagePreview(''); setUploadProgress(0);
         setIsEditingMenu(false);
         fetchMenu();
       } catch (err) {
-        setImageUploading(false);
-        alert('Failed: ' + err.message);
+        console.error('Save Menu Error:', err);
+        alert('Failed to save menu item: ' + err.message);
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -529,7 +768,6 @@ const AdminDashboard = () => {
       try { await deleteDoc(doc(db, 'menu_items', id)); fetchMenu(); } catch (e) { alert('Failed'); }
     };
 
-    // Save categories to Firestore so they persist
     const saveCategory = async () => {
       const cat = newCategory.trim();
       if (!cat) return;
@@ -565,7 +803,6 @@ const AdminDashboard = () => {
       try { await deleteDoc(doc(db, 'admins', id)); fetchAdmins(); } catch (e) { alert('Failed'); }
     };
 
-    // Cancel booking/order
     const openCancelModal = (id, type) => { setCancelTarget({ id, type }); setCancelReason(''); setShowCancelModal(true); };
     const confirmCancel = async () => {
       if (!cancelReason.trim()) return alert('Please enter a cancellation reason.');
@@ -587,7 +824,6 @@ const AdminDashboard = () => {
       setShowCancelModal(false);
     };
 
-    // Advance payment confirmation
     const openAdvanceModal = (booking) => { setAdvanceTarget(booking); setAdvanceAmount(''); setShowAdvanceModal(true); };
     const confirmAdvancePayment = async () => {
       if (!advanceAmount || isNaN(advanceAmount)) return alert('Enter valid amount.');
@@ -616,12 +852,12 @@ const AdminDashboard = () => {
           guests: advanceTarget.guest_count,
           totalAmount: total,
           advancePaid: adv,
+          comboName: advanceTarget.combo_applied?.name
         });
       } catch (e) { alert('Failed: ' + e.message); }
       setShowAdvanceModal(false);
     };
 
-    // Update notification bell counts
     const refreshNotifCounts = (bkList, foList) => {
       setNotifCount({
         bookings: (bkList || bookings).filter(b => b.status === 'pending').length,
@@ -629,7 +865,6 @@ const AdminDashboard = () => {
       });
     };
 
-    // Update order status with notification
     const updateOrderStatusWithNotif = async (id, status) => {
       const o = foodOrders.find(x => x.id === id);
       await updateDoc(doc(db, 'food_orders', id), { status });
@@ -643,7 +878,6 @@ const AdminDashboard = () => {
       if (msg) await createNotification({ userId: o.customer_id, type: `food_${status}`, message: msg, orderId: id });
     };
 
-    // Due amount for completed bookings
     const openDueModal = (booking) => { setDueTarget(booking); setDueAmount(''); setShowDueModal(true); };
     const saveDueAmount = async () => {
       if (!dueAmount || isNaN(dueAmount)) return alert('Enter valid amount.');
@@ -670,18 +904,17 @@ const AdminDashboard = () => {
       { id: 'orders', icon: <UtensilsCrossed size={18} />, label: 'Food Orders' },
       { id: 'menu', icon: <Coffee size={18} />, label: 'Menu' },
       { id: 'combos', icon: <Ticket size={18} />, label: 'Combos' },
+      { id: 'coupons', icon: <Shield size={18} />, label: 'Coupons' },
       { id: 'members', icon: <Users size={18} />, label: 'Members' },
       { id: 'expenses', icon: <Wallet size={18} />, label: 'Expenses' },
       { id: 'analytics', icon: <BarChart2 size={18} />, label: 'Analytics' },
+      { id: 'tasks_live', icon: <CheckSquare size={18} />, label: 'Live Tasks' },
       { id: 'settings', icon: <Settings size={18} />, label: 'Settings' },
       { id: 'admins', icon: <Lock size={18} />, label: 'Admins' },
     ];
 
-    const adminName = localStorage.getItem('admin_name') || 'Admin';
-
     return (
       <div className="flex min-h-screen luxury-bg mesh-pattern relative">
-        {/* Mobile Top Navigation */}
         <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-[#05071A]/95 backdrop-blur-2xl border-b border-accent/10 z-[60] flex items-center justify-between px-4">
           <div className="flex items-center gap-3">
             <img src={logo43c} alt="43C" className="h-8 w-8 object-contain rounded-lg" onError={e => e.target.style.display = 'none'} />
@@ -695,12 +928,10 @@ const AdminDashboard = () => {
           </div>
         </div>
 
-        {/* Sidebar Overlay */}
         {isSidebarOpen && (
           <div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[45]" onClick={() => setIsSidebarOpen(false)} />
         )}
 
-        {/* Sidebar */}
         <div className={`w-64 bg-[#05071A]/95 backdrop-blur-2xl border-r border-[#D4A95F]/20 p-4 lg:p-6 space-y-6 shrink-0 flex flex-col h-[100dvh] fixed lg:sticky top-0 left-0 z-50 transition-transform duration-300 ease-in-out lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="hidden lg:flex items-center gap-3">
             <img src={logo43c} alt="43C" className="h-8 w-8 object-contain rounded-lg" onError={e => e.target.style.display = 'none'} />
@@ -711,7 +942,7 @@ const AdminDashboard = () => {
             <AdminNotificationBell onNavigate={setView} />
           </div>
 
-          <div className="lg:hidden mt-14"></div> {/* Spacer for mobile */}
+          <div className="lg:hidden mt-14"></div>
 
           <nav className="space-y-1 flex-1 overflow-y-auto pr-1 pb-16 lg:pb-0 scrollbar-hide">
             {navItems.map(item => (
@@ -730,11 +961,9 @@ const AdminDashboard = () => {
           </button>
         </div>
 
-        {/* Main */}
         <div className="flex-1 p-4 lg:p-8 pt-20 lg:pt-8 w-full overflow-y-auto h-[100dvh]">
           <AnimatePresence mode="wait">
 
-            {/* ─── OVERVIEW ─── */}
             {view === 'overview' && analytics && (
               <motion.div key="ov" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
                 <div className="flex justify-between items-end">
@@ -761,14 +990,12 @@ const AdminDashboard = () => {
               </motion.div>
             )}
 
-            {/* ─── TASKS & CALENDAR ─── */}
             {view === 'tasks' && (
               <motion.div key="tk" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
                 <div className="flex justify-between items-center">
                   <h2 className="text-3xl font-heading">Tasks & <span className="gold-text-gradient italic">Calendar</span></h2>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  {/* Calendar Side */}
                   <div className="glass-card p-6 border-white/10">
                     <div className="flex justify-between items-center mb-6">
                       <button onClick={() => setCalendarMonth(p => { if (p === 0) { setCalendarYear(y => y - 1); return 11; } return p - 1; })} className="text-white/40 hover:text-accent font-bold px-3 py-1 bg-white/5 rounded-lg">&lt;</button>
@@ -805,14 +1032,11 @@ const AdminDashboard = () => {
                     </div>
                   </div>
 
-                  {/* Tasks & Bookings for Selected Date */}
                   <div className="space-y-6">
-                    {/* Selected Date Header */}
                     <div className="p-4 bg-white/5 border border-white/10 border-b-0 rounded-t-2xl flex justify-between items-center -mb-6">
                       <h3 className="font-heading text-lg">{new Date(selectedTaskDate).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</h3>
                     </div>
 
-                    {/* Combined Timeline View */}
                     <div className="glass-card p-6 !rounded-t-none border-t border-white/10 max-h-[400px] overflow-y-auto space-y-6">
                       {(() => {
                         const dayBookings = bookings.filter(b => b.booking_date === selectedTaskDate && (b.status === 'confirmed' || b.status === 'completed'))
@@ -853,7 +1077,6 @@ const AdminDashboard = () => {
                       })()}
                     </div>
 
-                    {/* Add New Task Form */}
                     <div className="glass-card p-5 !border-accent/30 space-y-3 relative overflow-hidden">
                       <div className="absolute top-0 right-0 w-32 h-32 bg-accent/5 blur-3xl -z-10 rounded-full" />
                       <h4 className="text-[10px] uppercase tracking-widest font-black text-accent mb-2 flex items-center gap-1.5"><CheckSquare size={12} />{selectedTaskDate} Schedule</h4>
@@ -868,7 +1091,6 @@ const AdminDashboard = () => {
               </motion.div>
             )}
 
-            {/* ─── BOOKINGS ─── */}
             {view === 'bookings' && (() => {
               const filtered = bookings.filter(b => {
                 if (filterStatus !== 'all' && b.status !== filterStatus) return false;
@@ -881,7 +1103,6 @@ const AdminDashboard = () => {
                     <h2 className="text-3xl font-heading">Reservations <span className="gold-text-gradient italic">Manifest</span></h2>
                     <button onClick={() => setShowBookingModal(true)} className="gold-button !px-5 !py-2.5 !text-xs flex items-center gap-2"><Plus size={14} />Manual Book</button>
                   </div>
-                  {/* Filters */}
                   <div className="flex flex-wrap gap-2 items-center glass-card p-4">
                     {['pending', 'confirmed', 'completed', 'cancelled', 'all'].map(s => {
                       const clsMap = { pending: 'border-yellow-500/40 text-yellow-400 bg-yellow-500/10', confirmed: 'border-blue-500/40 text-blue-400 bg-blue-500/10', completed: 'border-green-500/40 text-green-400 bg-green-500/10', cancelled: 'border-red-500/40 text-red-400 bg-red-500/10', all: 'border-white/20 text-white/60 bg-white/5' };
@@ -907,17 +1128,32 @@ const AdminDashboard = () => {
                               <p className="text-accent text-[10px] font-black tracking-widest uppercase mb-1">#{b.id.slice(0, 8)}</p>
                               <p className="font-bold">{b.customer_name} <span className="text-white/30 font-normal text-sm">· {b.customer_mobile}</span></p>
                               <p className="text-sm text-white/50 mt-1">{b.booking_date} · {b.screen || 'Screen 1'} · {formatSlotsDisplay(b.slots)} · {b.guest_count} guests</p>
+                              {b.combo_applied && (
+                                <div className="mt-2 p-2 bg-accent/10 border border-accent/20 rounded-xl max-w-fit">
+                                  <p className="text-[10px] uppercase font-black tracking-widest text-accent flex items-center gap-1.5">
+                                    <Ticket size={10}/> Combo: {b.combo_applied.name} (₹{b.combo_applied.price})
+                                  </p>
+                                </div>
+                              )}
                               <div className="flex items-center gap-3 mt-2 flex-wrap">
                                 <p className="text-[10px] text-white/30">Total: ₹{b.final_price || b.price}</p>
                                 {b.advance_paid != null && <p className="text-[10px] text-green-400">Adv: ₹{b.advance_paid}</p>}
                                 {b.remaining_amount != null && <p className="text-[10px] text-yellow-400">Due: ₹{b.remaining_amount}</p>}
+                                {b.coupon_applied && <p className="text-[10px] text-blue-400">Coupon: {b.coupon_applied}</p>}
                                 {b.cancel_reason && <p className="text-[10px] text-red-400">Reason: {b.cancel_reason}</p>}
                               </div>
-                              {/* Editable WhatsApp number */}
                               <div className="flex items-center gap-2 mt-2">
                                 <input type="tel" value={wa} onChange={e => setEditWaMobile(p => ({ ...p, [b.id]: e.target.value }))}
                                   className="bg-white/5 border border-white/10 text-white text-[10px] rounded-lg px-2 py-1 w-32 outline-none focus:border-accent" placeholder="WhatsApp No." maxLength={10} />
-                                <button onClick={() => openAdminWhatsApp({ customerMobile: wa, customerName: b.customer_name, slots: b.slots || [], date: b.booking_date, guests: b.guest_count, totalAmount: b.final_price || b.price || 0 })}
+                                <button onClick={() => openAdminWhatsApp({ 
+                                  customerMobile: wa, 
+                                  customerName: b.customer_name, 
+                                  slots: b.slots || [], 
+                                  date: b.booking_date, 
+                                  guests: b.guest_count, 
+                                  totalAmount: b.final_price || b.price || 0,
+                                  comboName: b.combo_applied?.name 
+                                })}
                                   className="flex items-center gap-1 text-[9px] bg-green-500/20 text-green-400 border border-green-500/30 px-2 py-1 rounded-lg font-black uppercase">
                                   <Phone size={10} /> WhatsApp
                                 </button>
@@ -938,6 +1174,7 @@ const AdminDashboard = () => {
                               {b.status !== 'cancelled' && b.status !== 'completed' && (
                                 <button onClick={() => openCancelModal(b.id, 'booking')} className="text-[9px] bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-lg font-black uppercase">Cancel</button>
                               )}
+                              <button onClick={() => deleteBooking(b.id)} className="text-[9px] bg-red-500 text-white px-3 py-1.5 rounded-lg font-black uppercase hover:bg-red-600 transition-colors">Perm Delete</button>
                               <div className="flex items-center gap-2">
                                 {editPrice[b.id] !== undefined
                                   ? <React.Fragment><input type="number" className="bg-white/5 border border-accent/40 text-white text-xs rounded-lg px-2 py-1 w-24 outline-none" value={editPrice[b.id]} onChange={e => setEditPrice(p => ({ ...p, [b.id]: e.target.value }))} />
@@ -956,7 +1193,6 @@ const AdminDashboard = () => {
               );
             })()}
 
-            {/* ─── SLOT CONTROL ─── */}
             {view === 'slots' && (
               <motion.div key="sl" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -991,7 +1227,6 @@ const AdminDashboard = () => {
               </motion.div>
             )}
 
-            {/* ─── FOOD ORDERS ─── */}
             {view === 'orders' && (
               <motion.div key="or" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
                 <h2 className="text-3xl font-heading">Food <span className="gold-text-gradient italic">Orders</span></h2>
@@ -1036,7 +1271,77 @@ const AdminDashboard = () => {
               </motion.div>
             )}
 
-            {/* ─── MENU ─── */}
+            {view === 'tasks_live' && (() => {
+              const pendingBookings = bookings.filter(b => b.status === 'pending');
+              const activeOrders = foodOrders.filter(o => o.status === 'pending' || o.status === 'preparing' || o.status === 'confirmed');
+              const upcomingBookings = bookings.filter(b => b.status === 'confirmed' || b.status === 'in_progress');
+
+              return (
+                <motion.div key="live" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-3xl font-heading">Mission <span className="gold-text-gradient italic">Control</span></h2>
+                    <div className="flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-500 rounded-full text-[10px] font-black uppercase tracking-widest border border-red-500/20 animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.3)]">
+                      <div className="w-2 h-2 rounded-full bg-red-500"></div> Live Ops
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="space-y-4">
+                      <h3 className="font-heading text-lg flex items-center justify-between border-b border-white/10 pb-2">
+                        <span className="text-white/60">Pending Req</span>
+                        <span className="bg-yellow-500 text-black px-2 rounded-full text-xs font-black">{pendingBookings.length}</span>
+                      </h3>
+                      {pendingBookings.map(b => (
+                        <div key={b.id} className="glass-card p-4 border-l-4 border-l-yellow-500 shadow-[0_0_15px_rgba(234,179,8,0.1)]">
+                          <p className="text-xs uppercase tracking-widest mb-1 text-white/50">{b.booking_date}</p>
+                          <p className="font-black text-sm">{b.customer_name}</p>
+                          <p className="text-accent text-[10px] font-bold mt-1">{b.screen} · {b.slotDisplay}</p>
+                          {b.combo_applied && <p className="text-[9px] text-accent/70 mt-1 uppercase">🍹 Combo: {b.combo_applied.name}</p>}
+                          <button onClick={() => setView('bookings')} className="mt-3 w-full gold-button !py-1.5 !text-[9px]">Review</button>
+                        </div>
+                      ))}
+                      {pendingBookings.length === 0 && <p className="text-center text-xs text-white/20 p-4">All caught up!</p>}
+                    </div>
+
+                    <div className="space-y-4">
+                      <h3 className="font-heading text-lg flex items-center justify-between border-b border-white/10 pb-2">
+                        <span className="text-white/60">Kitchen</span>
+                        <span className="bg-blue-500 text-white px-2 rounded-full text-xs font-black">{activeOrders.length}</span>
+                      </h3>
+                      {activeOrders.map(o => (
+                        <div key={o.id} className="glass-card p-4 border-l-4 border-l-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.1)]">
+                          <div className="flex justify-between items-start mb-1">
+                            <p className="font-black text-sm">{o.customer_name}</p>
+                            <span className="text-[9px] uppercase tracking-widest text-blue-400 font-bold">{o.status}</span>
+                          </div>
+                          <p className="text-[10px] text-white/50 mb-2 leading-snug">{(o.items||[]).map(i => i.qty + 'x ' + i.name).join(', ')}</p>
+                          <button onClick={() => setView('orders')} className="mt-2 w-full bg-white/5 hover:bg-white/10 text-[9px] uppercase font-black py-1.5 rounded-lg border border-white/10">Manage</button>
+                        </div>
+                      ))}
+                      {activeOrders.length === 0 && <p className="text-center text-xs text-white/20 p-4">No active orders</p>}
+                    </div>
+
+                    <div className="space-y-4">
+                      <h3 className="font-heading text-lg flex items-center justify-between border-b border-white/10 pb-2">
+                        <span className="text-white/60">Active Guests</span>
+                        <span className="bg-green-500 text-white px-2 rounded-full text-xs font-black">{upcomingBookings.length}</span>
+                      </h3>
+                      {upcomingBookings.slice(0,7).map(b => (
+                        <div key={b.id} className="glass-card p-4 border-l-4 border-l-green-500 shadow-[0_0_15px_rgba(34,197,94,0.1)]">
+                          <p className="font-black text-sm">{b.customer_name}</p>
+                          <p className="text-green-400 text-[10px] font-bold mt-1">{b.screen} · {b.slotDisplay}</p>
+                          <p className="text-[10px] text-white/40 mt-1">{b.booking_date}</p>
+                          <button onClick={() => setView('bookings')} className="mt-3 w-full bg-white/5 hover:bg-white/10 text-[9px] uppercase font-black py-1.5 rounded-lg border border-white/10">Manage Booking</button>
+                        </div>
+                      ))}
+                      {upcomingBookings.length === 0 && <p className="text-center text-xs text-white/20 p-4">Lounge is quiet</p>}
+                    </div>
+
+                  </div>
+                </motion.div>
+              );
+            })()}
+
             {view === 'menu' && (
               <motion.div key="mn" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -1047,12 +1352,11 @@ const AdminDashboard = () => {
                     </button>
                     <button onClick={() => {
                       setMenuForm({ id: '', name: '', category: menuCategories[0] || 'Drinks', member_price: '', non_member_price: '', discount: '', image_url: '' });
-                      setImageFile(null); setImagePreview(''); setIsEditingMenu(false); setShowMenuModal(true);
+                      setIsEditingMenu(false); setShowMenuModal(true);
                     }} className="gold-button !px-5 !py-2.5 !text-xs flex items-center gap-2"><Plus size={14} />Add Item</button>
                   </div>
                 </div>
 
-                {/* Add Category Inline Panel */}
                 <AnimatePresence>
                   {showAddCategory && (
                     <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
@@ -1082,7 +1386,6 @@ const AdminDashboard = () => {
                   )}
                 </AnimatePresence>
 
-                {/* Category Filter Tabs */}
                 <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                   {['All', ...menuCategories].map(c => (
                     <button key={c} onClick={() => setMenuCatFilter(c)}
@@ -1091,7 +1394,6 @@ const AdminDashboard = () => {
                   ))}
                 </div>
 
-                {/* Menu Items Table */}
                 <div className="glass-card overflow-x-auto w-full">
                   <table className="w-full text-left">
                     <thead className="bg-white/5 border-b border-white/5">
@@ -1105,7 +1407,7 @@ const AdminDashboard = () => {
                             <td className="p-4">
                               <div className="flex items-center gap-3">
                                 {m.image_url
-                                  ? <img src={m.image_url} alt={m.name} className="w-12 h-12 rounded-xl object-cover border border-white/10" />
+                                  ? <img src={getLocalAsset(m.image_url, 'menu')} alt={m.name} className="w-12 h-12 rounded-xl object-cover border border-white/10" onError={e => e.target.style.display = 'none'} />
                                   : <div className="w-12 h-12 bg-white/5 rounded-xl flex items-center justify-center border border-white/10"><ImageIcon size={16} className="text-white/20" /></div>
                                 }
                                 <span className="font-medium text-sm">{m.name}</span>
@@ -1119,7 +1421,7 @@ const AdminDashboard = () => {
                             <td className="p-4">
                               <div className="flex gap-2">
                                 <button onClick={() => {
-                                  setMenuForm(m); setImagePreview(m.image_url || ''); setImageFile(null);
+                                  setMenuForm(m);
                                   setIsEditingMenu(true); setShowMenuModal(true);
                                 }} className="bg-blue-500/20 text-blue-400 border border-blue-500/20 px-3 py-1 text-[9px] rounded-lg uppercase tracking-widest font-bold hover:bg-blue-500/30 transition-colors">Edit</button>
                                 <button onClick={() => deleteMenu(m.id)} className="bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1 text-[9px] rounded-lg uppercase tracking-widest font-bold hover:bg-red-500/20 transition-colors">Delete</button>
@@ -1136,35 +1438,144 @@ const AdminDashboard = () => {
               </motion.div>
             )}
 
-            {/* ─── COMBOS ─── */}
             {view === 'combos' && (
               <motion.div key="com" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                   <h2 className="text-3xl font-heading">Combos <span className="gold-text-gradient italic">Manager</span></h2>
-                  <button onClick={() => { setComboForm({ id: '', name: '', price: '', description: '', includes: '', custom_message: '' }); setShowComboModal(true); }} className="gold-button !px-5 !py-2.5 !text-[10px] flex items-center gap-2 font-black uppercase tracking-widest"><Plus size={14} />Add Combo</button>
+                  <button onClick={() => { 
+                    setComboForm({ id: '', name: '', price: '', description: '', includes: '', custom_message: '', is_active: true, max_guests: 2, screen_type: 'Screen 1', image_url: '' }); 
+                    setEditingComboId(null);
+                    setShowComboModal(true); 
+                  }} className="gold-button !px-5 !py-2.5 !text-[10px] flex items-center gap-2 font-black uppercase tracking-widest"><Plus size={14} />Add Combo</button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {combos.map(c => (
-                    <div key={c.id} className="glass-card p-5 border-accent/20 relative group hover:border-accent transition-colors">
-                      <h3 className="text-xl font-heading text-white">{c.name}</h3>
-                      <p className="text-accent font-bold mt-1 text-lg">₹{c.price}</p>
-                      <p className="text-xs text-white/50 mt-2 mb-4">{c.description}</p>
-                      <div className="space-y-1">
-                        <p className="text-[9px] uppercase tracking-widest text-white/30">Includes:</p>
-                        <p className="text-sm font-bold text-white/80">{c.includes}</p>
-                      </div>
-                      <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => { setComboForm(c); setShowComboModal(true); }} className="bg-blue-500/20 text-blue-400 p-2 rounded-lg hover:bg-blue-500/30"><Plus size={14} className="rotate-45" /></button>
-                        <button onClick={() => deleteCombo(c.id)} className="bg-red-500/20 text-red-400 p-2 rounded-lg hover:bg-red-500/30"><Trash2 size={14} /></button>
-                      </div>
-                    </div>
+                    <ComboCard 
+                      key={c.id} 
+                      combo={c} 
+                      getLocalAsset={getLocalAsset}
+                      onEdit={(item) => {
+                        setEditingComboId(item.id);
+                        setComboForm({ ...item, id: item.id });
+                        setShowComboModal(true);
+                      }}
+                      onDelete={deleteCombo}
+                      onToggle={toggleComboActive}
+                    />
                   ))}
                   {combos.length === 0 && <div className="col-span-full text-center py-12 text-white/30 text-sm">No combos available.</div>}
                 </div>
               </motion.div>
             )}
 
-            {/* ─── MEMBERS ─── */}
+            {view === 'coupons' && (
+              <motion.div key="coup" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <h2 className="text-3xl font-heading">Coupons <span className="gold-text-gradient italic">Manager</span></h2>
+                  <div className="flex gap-2">
+                    <p className="text-[10px] text-white/30 italic">Send personalized codes to customers instantly.</p>
+                    <button 
+                      onClick={() => { 
+                        setCouponForm({ 
+                          id: '', 
+                          code: '', 
+                          type: 'percentage', 
+                          value: '', 
+                          applies_to: 'both', 
+                          max_usage: '', 
+                          used_count: 0, 
+                          expiry_date: '', 
+                          active: true, 
+                          usage_per_user: 1, 
+                          validity_days: '', 
+                          screen_applicable: 'All', 
+                          whatsapp_template: 'Hey! Your coupon code is {{code}}. Use this code to get 5% off! ✨' 
+                        }); 
+                        setShowCouponModal(true); 
+                      }} 
+                      className="gold-button !px-5 !py-2.5 !text-[10px] flex items-center gap-2 font-black uppercase tracking-widest"
+                    >
+                      <Plus size={14} />Add Coupon
+                    </button>
+                  </div>
+                </div>
+                <div className="glass-card overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-white/5 border-b border-white/5">
+                      <tr>{['Code', 'Type', 'Value', 'Applies To', 'Used/Max', 'Per User', 'Validity (D/Exp)', 'Status', 'Actions'].map(h => <th key={h} className="p-4 text-[9px] uppercase tracking-[0.2em] text-white/40 whitespace-nowrap">{h}</th>)}</tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {coupons.map(c => (
+                        <tr key={c.id} className="hover:bg-white/[0.02]">
+                          <td className="p-4 font-bold font-mono text-accent">{c.code}</td>
+                          <td className="p-4 uppercase text-[10px] tracking-widest">{c.type.replace('_', ' ')}</td>
+                          <td className="p-4 font-bold">{c.type === 'percentage' ? `${c.value}%` : c.type === 'amount' ? `₹${c.value}` : 'Free Hour'}</td>
+                          <td className="p-4 uppercase text-[10px] tracking-widest">{c.applies_to}</td>
+                          <td className="p-4 text-xs">{c.used_count || 0} / {c.max_usage || '∞'}</td>
+                          <td className="p-4 text-xs">{c.usage_per_user || '∞'}</td>
+                          <td className="p-4 text-xs">{c.validity_days ? `${c.validity_days}d` : ''} {c.expiry_date || ''}</td>
+                          <td className="p-4"><span className={`px-2 py-1 rounded-full text-[9px] uppercase font-black tracking-widest border ${c.active ? 'text-green-500 border-green-500/30 bg-green-500/10' : 'text-red-500 border-red-500/30 bg-red-500/10'}`}>{c.active ? 'Active' : 'Inactive'}</span></td>
+                          <td className="p-4">
+                            <div className="flex gap-2">
+                              <button 
+                                onClick={() => {
+                                  let phone = prompt("Enter Customer Mobile (e.g. 9876543210):");
+                                  if (!phone) return;
+                                  
+                                  const template = c.whatsapp_template || `Hey! Your coupon code is {{code}}. Use this code to get 5% off! ✨`;
+                                  const generatedMsg = template.replace(/{{code}}/gi, c.code);
+                                  
+                                  // SECON STEP: Allow admin to edit/confirm the message
+                                  const finalMsg = prompt("Confirm/Edit the message being sent:", generatedMsg);
+                                  if (!finalMsg) return;
+
+                                  const cleanPhone = phone.replace(/\D/g, '');
+                                  const fullPhone = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
+                                  window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(finalMsg)}`, '_blank');
+                                }} 
+                                className="p-2 bg-green-500/10 text-green-500 rounded hover:bg-green-500/20"
+                                title="Send via WhatsApp"
+                              >
+                                <MessageCircle size={14} />
+                              </button>
+                              <button 
+                                onClick={() => { setCouponForm({ ...c }); setShowCouponModal(true); }} 
+                                className="p-2 bg-blue-500/10 text-blue-500 rounded hover:bg-blue-500/20"
+                                title="Edit Coupon"
+                              >
+                                <Plus size={14} className="rotate-45" />
+                              </button>
+                              <button 
+                                onClick={() => toggleCouponActive(c)} 
+                                className={`px-3 py-1.5 rounded transition-all text-[9px] font-black uppercase tracking-widest border
+                                  ${c.active ? 'bg-yellow-500/10 border-yellow-500/30 text-yellow-500' : 'bg-green-500/10 border-green-500/30 text-green-500'}
+                                `}
+                              >
+                                {c.active ? 'Disable' : 'Enable'}
+                              </button>
+                              <button 
+                                onClick={() => resetCoupon(c)} 
+                                className="px-3 py-1.5 bg-green-500/10 border border-green-500/30 text-green-500 rounded text-[9px] uppercase font-black tracking-widest"
+                              >
+                                Reset
+                              </button>
+                              <button 
+                                onClick={() => deleteCoupon(c.id)} 
+                                className="p-2 bg-red-500/10 text-red-500 rounded hover:bg-red-500/20"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {coupons.length === 0 && <tr><td colSpan="8" className="p-8 text-center text-white/30 text-xs">No coupons created.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </motion.div>
+            )}
+
             {view === 'members' && (
               <motion.div key="mem" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -1208,7 +1619,6 @@ const AdminDashboard = () => {
               </motion.div>
             )}
 
-            {/* ─── EXPENSES ─── */}
             {view === 'expenses' && (
               <motion.div key="ex" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
                 <div className="flex justify-between items-center">
@@ -1224,7 +1634,6 @@ const AdminDashboard = () => {
               </motion.div>
             )}
 
-            {/* ─── ANALYTICS ─── */}
             {view === 'analytics' && (
               <motion.div key="an" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -1243,7 +1652,6 @@ const AdminDashboard = () => {
                   </div>
                 </div>
 
-                {/* Summary */}
                 {analyticsData.rows.length > 0 && (() => {
                   const totB = analyticsData.rows.reduce((s, r) => s + r.bookingTotal, 0);
                   const totF = analyticsData.rows.reduce((s, r) => s + r.foodTotal, 0);
@@ -1258,7 +1666,6 @@ const AdminDashboard = () => {
                   );
                 })()}
 
-                {/* Daily Table */}
                 <div className="glass-card overflow-x-auto w-full">
                   <table className="w-full text-left">
                     <thead className="bg-white/5 border-b border-white/5">
@@ -1292,7 +1699,6 @@ const AdminDashboard = () => {
                   </table>
                 </div>
 
-                {/* Top Performers */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                   <div className="glass-card p-6">
                     <h3 className="text-sm font-black uppercase tracking-widest text-accent mb-4">Top Slots</h3>
@@ -1325,7 +1731,6 @@ const AdminDashboard = () => {
               </motion.div>
             )}
 
-            {/* ─── SETTINGS ─── */}
             {view === 'settings' && (
               <motion.div key="st" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8 max-w-2xl">
                 <h2 className="text-3xl font-heading">System <span className="gold-text-gradient italic">Settings</span></h2>
@@ -1342,7 +1747,6 @@ const AdminDashboard = () => {
                     <p className="text-[10px] text-white/20 mt-3">Current: +91 {waNumber}</p>
                   </div>
 
-                  {/* Screen Management */}
                   <div className="pt-6 border-t border-white/10">
                     <h3 className="text-sm uppercase tracking-widest font-black text-accent mb-4 flex items-center gap-2"><Monitor size={14} />Screen Management</h3>
                     <div className="space-y-3">
@@ -1428,7 +1832,6 @@ const AdminDashboard = () => {
               </motion.div>
             )}
 
-            {/* ─── ADMINS ─── */}
             {view === 'admins' && (
               <motion.div key="ad" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
                 <div className="flex justify-between items-center">
@@ -1454,9 +1857,6 @@ const AdminDashboard = () => {
           </AnimatePresence>
         </div>
 
-        {/* ─── MODALS ─── */}
-
-        {/* Expense Modal */}
         {showExpenseModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowExpenseModal(false)} />
@@ -1472,7 +1872,6 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        {/* Menu Modal */}
         {showMenuModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowMenuModal(false)} />
@@ -1483,7 +1882,6 @@ const AdminDashboard = () => {
                 {isEditingMenu ? '✏️ Edit Menu Item' : '➕ Add Menu Item'}
               </h3>
               <form onSubmit={saveMenu} className="space-y-5">
-                {/* Item name */}
                 <div className="space-y-1.5">
                   <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Item Name *</label>
                   <input type="text" required placeholder="e.g. Cold Coffee, Peri Peri Fries"
@@ -1492,52 +1890,41 @@ const AdminDashboard = () => {
                   />
                 </div>
 
-                {/* Image upload */}
-                <div className="space-y-2">
-                  <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Item Photo</label>
-                  <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleImageSelect} />
-                  {imagePreview || menuForm.image_url ? (
+                <div className="space-y-1.5 p-4 bg-white/5 border border-white/10 rounded-2xl relative overflow-hidden">
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Local Asset Filename</label>
+                    <ImageIcon size={14} className="text-accent/40" />
+                  </div>
+                  
+                  <input type="text" placeholder="hero.png"
+                    className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm mb-3"
+                    value={menuForm.image_url || ''} 
+                    onChange={e => setMenuForm({ ...menuForm, image_url: e.target.value })}
+                  />
+
+                  {menuForm.image_url ? (
                     <div className="relative group">
                       <img
-                        src={imagePreview || menuForm.image_url}
+                        src={getLocalAsset(menuForm.image_url, 'menu')}
                         alt="preview"
-                        className="w-full h-40 object-cover rounded-2xl border border-white/10"
+                        className="w-full h-40 object-cover rounded-2xl border border-white/10 bg-black/40"
+                        onError={(e) => { e.target.src = logo43c; e.target.style.opacity = 0.3; }}
                       />
-                      <button
-                        type="button"
-                        onClick={() => { setImageFile(null); setImagePreview(''); setMenuForm(f => ({ ...f, image_url: '' })); if (fileInputRef.current) fileInputRef.current.value = ''; }}
-                        className="absolute top-2 right-2 bg-black/60 text-white rounded-full p-1.5 hover:bg-red-500 transition-colors"
-                      ><X size={14} /></button>
-                      <button type="button" onClick={() => fileInputRef.current?.click()}
-                        className="absolute bottom-2 right-2 bg-black/70 text-white text-[9px] uppercase tracking-widest font-black px-3 py-1.5 rounded-xl border border-white/20 hover:bg-accent hover:text-primary transition-all"
-                      >Change Photo</button>
+                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl">
+                         <p className="text-[8px] uppercase tracking-widest font-black text-white/60">Path: public/assets/menu/{menuForm.image_url}</p>
+                      </div>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full h-32 border-2 border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center gap-3 hover:border-accent/40 hover:bg-white/5 transition-all group"
-                    >
-                      <div className="w-10 h-10 rounded-full bg-accent/10 flex items-center justify-center group-hover:bg-accent/20 transition-colors">
-                        <Upload size={18} className="text-accent" />
-                      </div>
-                      <div className="text-center">
-                        <p className="text-xs font-bold text-white/60">Click to upload image</p>
-                        <p className="text-[9px] text-white/20 mt-0.5">PNG, JPG, WEBP • Max 5MB</p>
-                      </div>
-                    </button>
-                  )}
-                  {imageUploading && (
-                    <div className="space-y-1.5">
-                      <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                        <div className="h-full bg-accent rounded-full transition-all duration-200" style={{ width: `${uploadProgress}%` }} />
-                      </div>
-                      <p className="text-[9px] text-accent text-center">Uploading... {uploadProgress}%</p>
+                    <div className="w-full h-32 border-2 border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center gap-3 bg-white/2">
+                       <ImageIcon size={24} className="text-white/10" />
+                       <p className="text-[9px] text-white/20 font-bold uppercase">No asset specified</p>
                     </div>
                   )}
+                  <p className="text-[8px] text-white/20 mt-3 leading-relaxed">
+                    💡 <b>Tip:</b> Place your image in the <code className="text-accent/60">public/assets/menu/</code> folder and type its exact filename here.
+                  </p>
                 </div>
 
-                {/* Category */}
                 <div className="space-y-1.5">
                   <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Category *</label>
                   <select required
@@ -1547,10 +1934,8 @@ const AdminDashboard = () => {
                   >
                     {menuCategories.map(c => <option key={c} value={c} className="bg-[#05071A]">{c}</option>)}
                   </select>
-                  <p className="text-[9px] text-white/20">Add new categories from the Menu tab ("New Category" button).</p>
                 </div>
 
-                {/* Pricing */}
                 <div className="space-y-1.5">
                   <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Pricing (₹) *</label>
                   <div className="grid grid-cols-2 gap-3">
@@ -1571,7 +1956,6 @@ const AdminDashboard = () => {
                   </div>
                 </div>
 
-                {/* Discount */}
                 <div className="space-y-1.5">
                   <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Discount % (Optional)</label>
                   <input type="number" placeholder="e.g. 10" min="0" max="100"
@@ -1584,10 +1968,8 @@ const AdminDashboard = () => {
                   <button type="button" onClick={() => setShowMenuModal(false)}
                     className="flex-1 py-4 rounded-xl border border-white/10 text-white/40 text-[10px] uppercase font-black hover:bg-white/5 transition-colors"
                   >Cancel</button>
-                  <button type="submit" disabled={imageUploading}
-                    className="flex-1 gold-button !py-4 !text-[10px] uppercase font-black"
-                  >
-                    {imageUploading ? `Uploading ${uploadProgress}%...` : isEditingMenu ? 'Update Item' : 'Save to Menu'}
+                  <button type="submit" className="flex-[2] gold-button !py-4 font-black uppercase tracking-widest text-[10px]">
+                    {menuForm.id ? 'Update Item' : 'Create Item'}
                   </button>
                 </div>
               </form>
@@ -1599,15 +1981,162 @@ const AdminDashboard = () => {
         {showComboModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowComboModal(false)} />
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#05071A] p-8 max-w-md w-full relative z-10 border-accent/20 space-y-5">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#05071A] p-8 max-w-lg w-full relative z-10 border-accent/20 space-y-5 max-h-[95vh] overflow-y-auto">
               <h3 className="text-2xl font-heading gold-text-gradient mb-6">{comboForm.id ? 'Edit Combo' : 'Create Combo'}</h3>
               <form onSubmit={saveCombo} className="space-y-4">
-                <input type="text" required placeholder="Combo Name (e.g. Birthday Special)" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm" value={comboForm.name} onChange={e => setComboForm({ ...comboForm, name: e.target.value })} />
-                <input type="number" required placeholder="Price (₹)" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm" value={comboForm.price} onChange={e => setComboForm({ ...comboForm, price: e.target.value })} />
-                <textarea placeholder="Description" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm h-20" value={comboForm.description} onChange={e => setComboForm({ ...comboForm, description: e.target.value })} />
-                <input type="text" placeholder="Includes (e.g. 2 Drinks + 1 Snack...)" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm" value={comboForm.includes} onChange={e => setComboForm({ ...comboForm, includes: e.target.value })} />
-                <textarea placeholder="Custom WhatsApp Message (optional)" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm h-20" value={comboForm.custom_message} onChange={e => setComboForm({ ...comboForm, custom_message: e.target.value })} />
-                <button className="gold-button w-full !py-4 font-black uppercase tracking-widest text-[10px]">Save Combo</button>
+                {/* Combo Image Asset mapping */}
+                <div className="space-y-1.5 p-4 bg-white/5 border border-white/10 rounded-2xl">
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Combo Banner (public/assets/combos/)</label>
+                    <ImageIcon size={14} className="text-accent/40" />
+                  </div>
+                  
+                  <input type="text" placeholder="bday_banner.jpg"
+                    className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm mb-3"
+                    value={comboForm.image_url || ''} 
+                    onChange={e => setComboForm({ ...comboForm, image_url: e.target.value })}
+                  />
+
+                  {comboForm.image_url && (
+                    <div className="relative h-32 rounded-xl overflow-hidden group border border-white/10 bg-black/40">
+                      <img 
+                        src={getLocalAsset(comboForm.image_url, 'combos')} 
+                        className="w-full h-full object-cover" 
+                        alt="Preview" 
+                        onError={(e) => { e.target.src = logo43c; e.target.style.opacity = 0.2; }}
+                      />
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                         <p className="text-[8px] font-black uppercase text-accent">Filename active</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2">
+                    <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Combo Name</label>
+                    <input type="text" required placeholder="Birthday Dash Special" className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm" value={comboForm.name || ''} onChange={e => setComboForm({ ...comboForm, name: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Price (₹)</label>
+                    <input type="number" required placeholder="999" className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm" value={comboForm.price || ''} onChange={e => setComboForm({ ...comboForm, price: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Max Guests</label>
+                    <input type="number" required placeholder="6" className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm" value={comboForm.max_guests || ''} onChange={e => setComboForm({ ...comboForm, max_guests: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Default Screen</label>
+                    <select required className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm text-white" value={comboForm.screen_type || ''} onChange={e => setComboForm({ ...comboForm, screen_type: e.target.value })}>
+                       <option value="" disabled className="bg-[#05071A]">Select Screen</option>
+                       {screens.map(s => <option key={s} value={s} className="bg-[#05071A]">{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Number of Slots</label>
+                    <input type="number" required min="1" placeholder="1" className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm" value={comboForm.number_of_slots || ''} onChange={e => setComboForm({ ...comboForm, number_of_slots: e.target.value })} />
+                  </div>
+                </div>
+
+                <div>
+                   <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Description</label>
+                   <textarea placeholder="Tell customers about the vibe..." className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm h-16" value={comboForm.description || ''} onChange={e => setComboForm({ ...comboForm, description: e.target.value })} />
+                </div>
+                <div>
+                   <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">What's Included</label>
+                   <textarea placeholder="Drinks, Balloons, Decorations..." className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm h-16" value={comboForm.includes || ''} onChange={e => setComboForm({ ...comboForm, includes: e.target.value })} />
+                </div>
+                <div>
+                   <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Custom Reply Message (Optional)</label>
+                   <textarea placeholder="Standard greeting for this package..." className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm h-16" value={comboForm.custom_message || ''} onChange={e => setComboForm({ ...comboForm, custom_message: e.target.value })} />
+                </div>
+
+                <div className="flex items-center gap-3 bg-white/5 p-4 rounded-xl border border-white/10">
+                  <input type="checkbox" id="combo_active_modal" checked={comboForm.is_active} onChange={(e) => setComboForm(p => ({...p, is_active: e.target.checked}))} className="w-5 h-5 accent-accent" />
+                  <label htmlFor="combo_active_modal" className="text-sm text-white/70 font-bold uppercase tracking-widest text-[10px]">Combo is Active</label>
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button type="button" onClick={() => setShowComboModal(false)}
+                    className="flex-1 py-4 rounded-xl border border-white/10 text-white/40 text-[10px] uppercase font-black hover:bg-white/5 transition-colors"
+                  >Cancel</button>
+                  <button type="submit" className="flex-[2] gold-button !py-4 font-black uppercase tracking-widest text-[10px]">
+                    {editingComboId ? 'Update Combo' : 'Create Combo'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Coupon Modal */}
+        {showCouponModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowCouponModal(false)} />
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#05071A] p-8 max-w-lg w-full relative z-10 border-accent/20 space-y-5 max-h-[90vh] overflow-y-auto">
+              <h3 className="text-2xl font-heading gold-text-gradient mb-6">{couponForm.id ? 'Edit Coupon' : 'Create Coupon'}</h3>
+              <form onSubmit={saveCoupon} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-[10px] uppercase tracking-widest text-white/40 block mb-2">Coupon Code</label>
+                    <input type="text" required className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm font-mono uppercase text-white" value={couponForm.code} onChange={e => setCouponForm({ ...couponForm, code: e.target.value.toUpperCase() })} />
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-[10px] uppercase tracking-widest text-white/40 block mb-2">Type</label>
+                    <select className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm text-white" value={couponForm.type} onChange={e => setCouponForm({ ...couponForm, type: e.target.value })}>
+                      <option value="percentage" className="bg-[#05071A]">Percentage (%)</option>
+                      <option value="amount" className="bg-[#05071A]">Fixed Amount (₹)</option>
+                      <option value="free_hour" className="bg-[#05071A]">Free Hour</option>
+                    </select>
+                  </div>
+                  
+                  {couponForm.type !== 'free_hour' && (
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="text-[10px] uppercase tracking-widest text-white/40 block mb-2">Value</label>
+                      <input type="number" required placeholder={couponForm.type === 'percentage' ? '%' : '₹'} className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm text-white" value={couponForm.value} onChange={e => setCouponForm({ ...couponForm, value: e.target.value })} />
+                    </div>
+                  )}
+
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-[10px] uppercase tracking-widest text-white/40 block mb-2">Applies To</label>
+                    <select className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm text-white" value={couponForm.applies_to} onChange={e => setCouponForm({ ...couponForm, applies_to: e.target.value })}>
+                      <option value="both" className="bg-[#05071A]">Food & Booking</option>
+                      <option value="food" className="bg-[#05071A]">Food Only</option>
+                      <option value="booking" className="bg-[#05071A]">Booking Only</option>
+                    </select>
+                  </div>
+
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-[10px] uppercase tracking-widest text-white/40 block mb-2">Usage Per User (0 = Unlim)</label>
+                    <input type="number" min="0" className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm text-white" value={couponForm.usage_per_user} onChange={e => setCouponForm({ ...couponForm, usage_per_user: e.target.value })} />
+                  </div>
+
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-[10px] uppercase tracking-widest text-white/40 block mb-2">Validity Days (Opt)</label>
+                    <input type="number" min="0" placeholder="e.g. 30" className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm text-white" value={couponForm.validity_days} onChange={e => setCouponForm({ ...couponForm, validity_days: e.target.value })} />
+                  </div>
+
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-[10px] uppercase tracking-widest text-white/40 block mb-2">Expiry Date (Opt)</label>
+                    <input type="date" className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm text-white custom-date-input" value={couponForm.expiry_date} onChange={e => setCouponForm({ ...couponForm, expiry_date: e.target.value })} />
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="text-[10px] uppercase tracking-widest text-white/40 block mb-2 font-black">WhatsApp Template (Use {"{{code}}"} as placeholder)</label>
+                    <textarea 
+                      placeholder="e.g. Welcome to 43C! Use code {{code}} to get a 5% discount." 
+                      className="w-full bg-white/5 border border-white/10 p-4 rounded-2xl outline-none focus:border-accent text-sm h-32 resize-none"
+                      value={couponForm.whatsapp_template || ''} 
+                      onChange={e => setCouponForm({ ...couponForm, whatsapp_template: e.target.value })}
+                    />
+                    <p className="text-[8px] text-white/20 mt-1 uppercase tracking-widest">Example: Hey you coupon code is {"{{code}}"} use this code to get 5% off.</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 bg-white/5 p-4 rounded-xl border border-white/10 mt-4">
+                  <input type="checkbox" id="coupon_active" checked={couponForm.active} onChange={(e) => setCouponForm(p => ({...p, active: e.target.checked}))} className="w-5 h-5 accent-accent" />
+                  <label htmlFor="coupon_active" className="text-sm text-white/70">Coupon Active</label>
+                </div>
+                <button className="gold-button w-full !py-4 font-black uppercase tracking-widest text-[10px] mt-4">Save Coupon</button>
               </form>
             </motion.div>
           </div>

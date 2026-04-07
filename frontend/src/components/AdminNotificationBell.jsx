@@ -21,6 +21,12 @@ const AdminNotificationBell = ({ onNavigate }) => {
     );
     const unsub = onSnapshot(q, (snap) => {
       setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (err) => {
+      if (err.code === 'failed-precondition') {
+        console.warn("Firestore Index Required: Please check the browser console for the direct link to create the necessary index for notifications.");
+      } else {
+        console.error("Firestore Notification Error:", err);
+      }
     });
     return () => unsub();
   }, []);

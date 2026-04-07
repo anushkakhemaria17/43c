@@ -40,11 +40,13 @@ const Navbar = () => {
 
           <div className="hidden md:flex items-center gap-6 lg:gap-8">
             <Link to="/book" className="text-sm uppercase tracking-widest hover:text-[#D4A95F] transition-colors">Book Slot</Link>
-            <Link to="/menu" className="text-sm uppercase tracking-widest hover:text-[#D4A95F] transition-colors text-accent flex items-center gap-2">Menu</Link>
+            <Link to="/combos" className="text-sm uppercase tracking-widest hover:text-[#D4A95F] transition-colors text-accent flex items-center gap-2">Combos</Link>
+            <Link to="/menu" className="text-sm uppercase tracking-widest hover:text-[#D4A95F] transition-colors flex items-center gap-2">Menu</Link>
             <Link to="/membership" className="text-sm uppercase tracking-widest hover:text-[#D4A95F] transition-colors flex items-center gap-2">
               <Crown className="w-4 h-4 text-accent" /> Membership
             </Link>
             <Link to="/contact" className="text-sm uppercase tracking-widest hover:text-[#D4A95F] transition-colors">Contact</Link>
+            <Link to="/terms" className="text-sm uppercase tracking-widest hover:text-[#D4A95F] transition-colors">Terms</Link>
             
             <div className="h-6 w-[1px] bg-white/10 mx-2"></div>
 
@@ -108,7 +110,8 @@ const Navbar = () => {
         
         <div className="flex-1 overflow-y-auto px-6 py-8 space-y-6 flex flex-col bg-[#05071A]">
           <Link to="/book" className="text-lg font-heading tracking-wider py-2" onClick={() => setIsOpen(false)}>Book Slot</Link>
-          <Link to="/menu" className="text-lg font-heading text-accent tracking-wider py-2 flex items-center gap-3" onClick={() => setIsOpen(false)}>Food Menu</Link>
+          <Link to="/combos" className="text-lg font-heading text-accent tracking-wider py-2 flex items-center gap-3" onClick={() => setIsOpen(false)}>Combos</Link>
+          <Link to="/menu" className="text-lg font-heading tracking-wider py-2 flex items-center gap-3" onClick={() => setIsOpen(false)}>Food Menu</Link>
           <Link to="/membership" className="text-lg font-heading text-accent tracking-wider py-2 flex items-center gap-3" onClick={() => setIsOpen(false)}>
             <Crown size={18} /> Membership
           </Link>
@@ -118,6 +121,7 @@ const Navbar = () => {
             </Link>
           )}
           <Link to="/contact" className="text-lg font-heading tracking-wider py-2" onClick={() => setIsOpen(false)}>Contact Us</Link>
+          <Link to="/terms" className="text-lg font-heading tracking-wider py-2" onClick={() => setIsOpen(false)}>Terms & Conditions</Link>
           {customer?.is_staff && (
             <Link to="/admin" className="text-lg font-heading text-accent tracking-wider py-2" onClick={() => setIsOpen(false)}>Control Panel</Link>
           )}

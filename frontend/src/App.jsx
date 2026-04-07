@@ -13,6 +13,7 @@ import MenuPage from './pages/MenuPage';
 import ContactPage from './pages/ContactPage';
 import AdminVerify from './pages/AdminVerify';
 import TermsPage from './pages/TermsPage';
+import CombosPage from './pages/CombosPage';
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/book" element={<BookingPage />} />
+            <Route path="/combos" element={<CombosPage />} />
             <Route path="/menu" element={<MenuPage />} />
             <Route path="/receipt/:id" element={<ReceiptPage />} />
             <Route path="/membership" element={<Membership />} />

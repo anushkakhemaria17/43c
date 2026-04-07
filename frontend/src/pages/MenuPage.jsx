@@ -26,6 +26,11 @@ const MenuPage = () => {
   const [placedOrder, setPlacedOrder] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
 
+  // Coupon state
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponError, setCouponError] = useState('');
+
   useEffect(() => {
     fetchMenu();
     if (customer) {
@@ -91,6 +96,58 @@ const MenuPage = () => {
   const getCartItemCount = () =>
     Object.values(cart).reduce((sum, item) => sum + item.qty, 0);
 
+  const getFinalTotal = () => {
+    let total = getCartTotal();
+    if (!appliedCoupon) return total;
+    if (appliedCoupon.type === 'percentage') {
+      return Math.max(0, total - (total * appliedCoupon.value / 100));
+    } else if (appliedCoupon.type === 'amount') {
+      return Math.max(0, total - appliedCoupon.value);
+    }
+    return total;
+  };
+
+  const handleApplyCoupon = async () => {
+    setCouponError('');
+    if (!couponCode.trim()) return;
+    try {
+      const q = query(collection(db, 'coupons'), where('code', '==', couponCode.toUpperCase()));
+      const snap = await getDocs(q);
+      if (snap.empty) {
+        setCouponError('Invalid coupon code');
+        return;
+      }
+      const c = snap.docs[0].data();
+      c.id = snap.docs[0].id;
+
+      if (!c.active) return setCouponError('Coupon is inactive');
+      if (c.applies_to !== 'both' && c.applies_to !== 'food') return setCouponError('Coupon not valid for food orders');
+      
+      // Total usage limit
+      if (c.max_usage > 0 && (c.used_count || 0) >= c.max_usage) return setCouponError('Coupon total usage limit reached');
+      
+      // Expiry Check (Date-safe)
+      if (c.expiry_date) {
+        const expDate = new Date(c.expiry_date);
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        if (expDate < today) return setCouponError('Coupon has expired');
+      }
+
+      // Check usage per user
+      if (c.usage_per_user > 0) {
+        const oQ = query(collection(db, 'food_orders'), where('customer_id', '==', customer.id), where('coupon_applied', '==', couponCode.toUpperCase()));
+        const oSnap = await getDocs(oQ);
+        if (oSnap.size >= c.usage_per_user) return setCouponError('You have already used this coupon maximum times');
+      }
+
+      setAppliedCoupon(c);
+      setCouponError('');
+    } catch (e) {
+      setCouponError('Error applying coupon');
+    }
+  };
+
   const placeOrder = async () => {
     if (!customer) return alert('Log in to place orders');
     setLoading(true);
@@ -98,19 +155,28 @@ const MenuPage = () => {
       const itemsToOrder = Object.values(cart).map(i => ({
         id: i.id, name: i.name, qty: i.qty, price: getPrice(i),
       }));
-      const total = getCartTotal();
+      const originalTotal = getCartTotal();
+      const finalTotal = Math.round(getFinalTotal());
 
       const docRef = await addDoc(collection(db, 'food_orders'), {
         customer_id: customer.id,
         customer_name: customer.name,
         customer_mobile: customer.mobile_number || '',
         items: itemsToOrder,
-        original_price: total,
-        final_price: total,
-        total,
+        original_price: originalTotal,
+        final_price: finalTotal,
+        total: finalTotal,
+        coupon_applied: appliedCoupon ? appliedCoupon.code : null,
+        discount_amount: Math.round(originalTotal - finalTotal),
         status: 'pending',
         created_at: serverTimestamp(),
       });
+
+      if (appliedCoupon) {
+        import('firebase/firestore').then(({ updateDoc, doc, increment }) => {
+          updateDoc(doc(db, 'coupons', appliedCoupon.id), { used_count: increment(1) });
+        });
+      }
 
       // Notify admin
       await createNotification({
@@ -130,14 +196,17 @@ const MenuPage = () => {
         orderId: docRef.id,
       });
 
-      setPlacedOrder({ id: docRef.id, items: itemsToOrder, total });
+      setPlacedOrder({ id: docRef.id, items: itemsToOrder, total: finalTotal, originalTotal, discount: originalTotal - finalTotal });
       setCart({});
+      setAppliedCoupon(null);
+      setCouponCode('');
       setShowCart(false);
       setShowConfirm(true);
 
       const waNumber = await getWhatsAppNumber();
       const itemsList = itemsToOrder.map(i => `- ${i.name} (x${i.qty})`).join('\n');
-      const msg = `I want to place a food order:\n${itemsList}\nTotal: ₹${total}`;
+      const discountText = appliedCoupon ? `\nDiscount: ₹${originalTotal - finalTotal}\nCoupon: ${appliedCoupon.code}` : '';
+      const msg = `I want to place a food order:\n${itemsList}\nOriginal Total: ₹${originalTotal}${discountText}\nFinal Total: ₹${finalTotal}`;
       window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`, '_blank');
     } catch (err) {
       alert('Failed: ' + err.message);
@@ -166,6 +235,12 @@ const MenuPage = () => {
   });
 
   const activeOrders = orders.filter(o => o.status === 'pending' || o.status === 'confirmed');
+
+  const getLocalAsset = (path, section) => {
+    if (!path) return '';
+    if (path.startsWith('http') || path.startsWith('blob:') || path.startsWith('data:')) return path;
+    return `/assets/${section}/${path}`;
+  };
 
   return (
     <div className="pt-28 pb-32 px-4 max-w-5xl mx-auto min-h-screen relative">
@@ -254,7 +329,7 @@ const MenuPage = () => {
                       <div className="aspect-video bg-gradient-to-br from-[#0B0F3A] to-[#05071A] relative overflow-hidden flex items-center justify-center">
                         {item.image_url ? (
                           <img
-                            src={item.image_url}
+                            src={getLocalAsset(item.image_url, 'menu')}
                             alt={item.name}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                           />
@@ -389,15 +464,40 @@ const MenuPage = () => {
               </div>
 
               {Object.values(cart).length > 0 && (
-                <div className="p-6 border-t border-white/10 bg-[#0B0F3A] space-y-4">
-                  <div className="flex justify-between items-center text-lg">
-                    <span className="font-light">Subtotal</span>
-                    <span className="font-heading font-bold gold-text-gradient">₹{getCartTotal()}</span>
+                <div className="p-6 border-t border-white/10 bg-[#0B0F3A] space-y-4 flex-shrink-0">
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="Coupon Code" 
+                      value={couponCode} 
+                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm uppercase focus:border-accent outline-none"
+                    />
+                    <button onClick={handleApplyCoupon} className="gold-button !py-2 !px-4 text-xs">Apply</button>
+                  </div>
+                  {couponError && <p className="text-red-400 text-xs">{couponError}</p>}
+                  {appliedCoupon && <p className="text-green-400 text-xs">Coupon "{appliedCoupon.code}" applied!</p>}
+
+                  <div className="space-y-2 text-sm border-t border-white/10 pt-4">
+                    <div className="flex justify-between items-center text-white/60">
+                      <span>Original Total</span>
+                      <span>₹{getCartTotal()}</span>
+                    </div>
+                    {appliedCoupon && (
+                      <div className="flex justify-between items-center text-green-400">
+                        <span>Discount ({appliedCoupon.type === 'percentage' ? `${appliedCoupon.value}%` : `₹${appliedCoupon.value}`})</span>
+                        <span>-₹{Math.round(getCartTotal() - getFinalTotal())}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between items-center text-lg mt-2 pt-2 border-t border-white/5">
+                      <span className="font-light">Final Total</span>
+                      <span className="font-heading font-bold gold-text-gradient">₹{Math.round(getFinalTotal())}</span>
+                    </div>
                   </div>
                   <button
                     onClick={placeOrder}
                     disabled={loading}
-                    className="gold-button w-full !rounded-2xl flex justify-center items-center gap-2 !py-4"
+                    className="gold-button w-full !rounded-xl flex justify-center items-center gap-2 !py-4 mt-2"
                   >
                     {loading
                       ? <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }} className="w-5 h-5 border-2 border-[#0B0F3A] border-t-transparent rounded-full" />
