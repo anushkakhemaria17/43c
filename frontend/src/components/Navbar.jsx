@@ -45,6 +45,7 @@ const Navbar = () => {
             <Link to="/membership" className="text-sm uppercase tracking-widest hover:text-[#D4A95F] transition-colors flex items-center gap-2">
               <Crown className="w-4 h-4 text-accent" /> Membership
             </Link>
+            <Link to="/guide" className="text-sm uppercase tracking-widest hover:text-[#D4A95F] transition-colors">Guide</Link>
             <Link to="/contact" className="text-sm uppercase tracking-widest hover:text-[#D4A95F] transition-colors">Contact</Link>
             <Link to="/terms" className="text-sm uppercase tracking-widest hover:text-[#D4A95F] transition-colors">Terms</Link>
             
@@ -120,6 +121,7 @@ const Navbar = () => {
               <User size={18} /> My Bookings
             </Link>
           )}
+          <Link to="/guide" className="text-lg font-heading tracking-wider py-2" onClick={() => setIsOpen(false)}>Guide</Link>
           <Link to="/contact" className="text-lg font-heading tracking-wider py-2" onClick={() => setIsOpen(false)}>Contact Us</Link>
           <Link to="/terms" className="text-lg font-heading tracking-wider py-2" onClick={() => setIsOpen(false)}>Terms & Conditions</Link>
           {customer?.is_staff && (

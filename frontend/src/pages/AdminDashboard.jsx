@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../lib/firebase';
 import { doc, updateDoc, deleteDoc, addDoc, collection, getDocs, query, where, serverTimestamp, setDoc, onSnapshot } from 'firebase/firestore';
-import { LayoutDashboard, Calendar, Users, Wallet, Plus, Clock, UtensilsCrossed, Coffee, CheckCircle2, Lock, X, Settings, Shield, BarChart2, MessageCircle, Bell, Phone, Trash2, Monitor, ImageIcon, ClipboardList, CheckSquare, Menu, Ticket } from 'lucide-react';
+import { LayoutDashboard, Calendar, Users, Wallet, Plus, Clock, UtensilsCrossed, Coffee, CheckCircle2, Lock, X, Settings, Shield, BarChart2, MessageCircle, Bell, Phone, Trash2, Monitor, ImageIcon, ClipboardList, CheckSquare, Menu, Ticket, CreditCard, Crown, Map, BookOpen, Zap, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SLOT_HOURS, getSlotLabel, getAvailableDates, getSlotStatusMap, formatSlotsDisplay, getTodayStr } from '../utils/slots';
 import { exportAnalyticsExcel } from '../utils/exportExcel';
@@ -12,6 +12,16 @@ import logo43c from '../assets/43C.png';
 
 const BOOKING_STATUSES = ['pending', 'confirmed', 'completed', 'cancelled'];
 const ORDER_STATUSES = ['pending', 'confirmed', 'served', 'cancelled'];
+const SCREEN_MAP = {
+  'Screen 1': 'Mini Lounge',
+  'Screen 2': 'Studio Lounge',
+  'TV Screen': 'Grand Lounge'
+};
+const REVERSE_SCREEN_MAP = {
+  'Mini Lounge': 'Screen 1',
+  'Studio Lounge': 'Screen 2',
+  'Grand Lounge': 'TV Screen'
+};
 
 const StatusBadge = ({ s }) => {
   const colors = { pending: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30', confirmed: 'text-blue-400 bg-blue-500/10 border-blue-500/30', completed: 'text-green-400 bg-green-500/10 border-green-500/30', served: 'text-green-400 bg-green-500/10 border-green-500/30', cancelled: 'text-red-400 bg-red-500/10 border-red-500/30' };
@@ -93,11 +103,10 @@ const AdminDashboard = () => {
   const [waInput, setWaInput] = useState('9479810400');
   const [termsText, setTermsText] = useState("");
   const [editPrice, setEditPrice] = useState({});
-  const [pricingMap, setPricingMap] = useState({
-    'Screen 1': { gold: 299, silver: 399, non_member: 499 },
-    'Screen 2': { gold: 299, silver: 399, non_member: 499 },
-    'TV Screen': { gold: 199, silver: 299, non_member: 399 }
-  });
+  const [foodCombos, setFoodCombos] = useState([]);
+  const [showFoodComboModal, setShowFoodComboModal] = useState(false);
+  const [foodComboForm, setFoodComboForm] = useState({ id: '', name: '', price: '', items: [], image_url: '' });
+  const [pricingMap, setPricingMap] = useState({});
 
   const [slotDate, setSlotDate] = useState(getTodayStr());
   const [slotScreen, setSlotScreen] = useState('Screen 1');
@@ -117,7 +126,7 @@ const AdminDashboard = () => {
   const [couponForm, setCouponForm] = useState({ id: '', code: '', type: 'percentage', value: '', applies_to: 'both', max_usage: '', used_count: 0, expiry_date: '', active: true, usage_per_user: 1, validity_days: '', screen_applicable: 'All', whatsapp_template: 'Hey! Use coupon code {{code}} to get a special discount at 43C! ✨' });
   const [coupons, setCoupons] = useState([]);
   const [showMenuModal, setShowMenuModal] = useState(false);
-  const [menuForm, setMenuForm] = useState({ id: '', name: '', category: 'Drinks', member_price: '', non_member_price: '', image_url: '', discount: '' });
+  const [menuForm, setMenuForm] = useState({ id: '', name: '', category: 'Drinks', silver_price: '', gold_price: '', non_member_price: '', image_url: '', discount: '' });
   const [isEditingMenu, setIsEditingMenu] = useState(false);
   const fileInputRef = useRef(null);
   const [menuCategories, setMenuCategories] = useState(['Drinks', 'Snacks', 'Main Course', 'Desserts', 'Shisha']);
@@ -136,7 +145,21 @@ const AdminDashboard = () => {
   const [filterStatus, setFilterStatus] = useState('pending');
   const [filterDate, setFilterDate] = useState('');
   const [editWaMobile, setEditWaMobile] = useState({});
-  const [notifCount, setNotifCount] = useState({ bookings: 0, orders: 0 });
+  const [notifCount, setNotifCount] = useState({ bookings: 0, orders: 0, memberships: 0 });
+ 
+  const [membershipPlans, setMembershipPlans] = useState([]);
+  const [activeMemberships, setActiveMemberships] = useState([]);
+  const [membershipRequests, setMembershipRequests] = useState([]);
+  const [showMembershipModal, setShowMembershipModal] = useState(false);
+  const [membershipForm, setMembershipForm] = useState({ 
+    id: '', name: '', price: '', validity_days: 30, description: '', is_active: true, credit_type: 'any', credits: 0,
+    per_screen_credits: {} 
+  });
+  const [isEditingMembership, setIsEditingMembership] = useState(false);
+  const [membershipSubView, setMembershipSubView] = useState('plans'); // 'plans', 'active', 'requests'
+  const [showMemApproveModal, setShowMemApproveModal] = useState(false);
+  const [memApproveTarget, setMemApproveTarget] = useState(null);
+  const [memApproveAmount, setMemApproveAmount] = useState('');
 
   const [memberFilter, setMemberFilter] = useState('all');
   const [memberBookings, setMemberBookings] = useState({});
@@ -145,7 +168,10 @@ const AdminDashboard = () => {
   const [dueTarget, setDueTarget] = useState(null);
   const [dueAmount, setDueAmount] = useState('');
   const [newScreenName, setNewScreenName] = useState('');
-  const [screens, setScreens] = useState(['Screen 1', 'Screen 2', 'TV Screen']);
+  const [screensList, setScreensList] = useState([]); // Array of objects
+  const [screens, setScreens] = useState(['Screen 1', 'Screen 2', 'TV Screen']); // Array of names for legacy
+  const [showScreenModal, setShowScreenModal] = useState(false);
+  const [screenForm, setScreenForm] = useState({ id: '', name: '', type: 'private', capacity: 6, is_active: true, legacy_link: 'None', pricing: { gold: 299, silver: 399, non_member: 499, pricing_type: 'group' } });
 
   const [tasks, setTasks] = useState([]);
   const [taskForm, setTaskForm] = useState({ title: '', time: '10:00' });
@@ -204,23 +230,44 @@ const AdminDashboard = () => {
       const unsubO = onSnapshot(query(collection(db, 'food_orders'), where('status', '==', 'pending')), (snap) => {
         setNotifCount(prev => ({ ...prev, orders: snap.docs.length }));
       });
-      return () => { unsubB(); unsubO(); };
+      const unsubM = onSnapshot(query(collection(db, 'customer_memberships'), where('status', '==', 'pending')), (snap) => {
+        setNotifCount(prev => ({ ...prev, memberships: snap.docs.length }));
+      });
+      return () => { unsubB(); unsubO(); unsubM(); };
     }, []);
 
     useEffect(() => {
-      if (view === 'overview') fetchAnalytics();
-      if (view === 'bookings') fetchAllBookings();
-      if (view === 'slots') fetchSlotData();
-      if (view === 'members') fetchCustomers();
+      if (screens.length > 0) {
+        if (!screens.includes(slotScreen)) setSlotScreen(screens[0]);
+        setBookingForm(prev => ({ ...prev, screen: screens.includes(prev.screen) ? prev.screen : screens[0] }));
+        setComboForm(prev => ({ ...prev, screen_type: screens.includes(prev.screen_type) ? prev.screen_type : screens[0] }));
+      }
+    }, [screens]);
+
+    useEffect(() => {
+      let unsubBookings = null;
+      let unsubOrders = null;
+
+      if (view === 'overview') { fetchAnalytics(); fetchScreens(); }
+      if (view === 'bookings') { unsubBookings = fetchAllBookings(); fetchScreens(); }
+      if (view === 'slots') { fetchSlotData(); fetchScreens(); }
+      if (view === 'members') { fetchCustomers(); fetchScreens(); }
       if (view === 'expenses') fetchExpenses();
       if (view === 'menu') fetchMenu();
       if (view === 'combos') fetchCombos();
+      if (view === 'food_combos') { fetchMenu(); fetchFoodCombos(); }
       if (view === 'coupons') fetchCoupons();
-      if (view === 'orders') fetchFoodOrders();
-      if (view === 'tasks_live') { fetchFoodOrders(); fetchAllBookings(); }
+      if (view === 'memberships') { fetchScreens(); fetchMembershipPlans(); fetchActiveMemberships(); fetchMembershipRequests(); }
+      if (view === 'orders') { unsubOrders = fetchFoodOrders(); fetchScreens(); }
+      if (view === 'tasks_live') { unsubOrders = fetchFoodOrders(); unsubBookings = fetchAllBookings(); fetchScreens(); }
       if (view === 'analytics') fetchAnalyticsView();
-      if (view === 'settings') fetchSettings();
-      if (view === 'tasks') { fetchTasks(); fetchAllBookings(); }
+      if (view === 'settings') { fetchSettings(); fetchScreens(); }
+      if (view === 'tasks') { fetchTasks(); unsubBookings = fetchAllBookings(); }
+
+      return () => {
+        if (unsubBookings) unsubBookings();
+        if (unsubOrders) unsubOrders();
+      };
     }, [view, slotDate, slotScreen]);
 
     useEffect(() => { if (view === 'analytics') fetchAnalyticsView(); }, [analyticsMonth, analyticsYear]);
@@ -245,6 +292,79 @@ const AdminDashboard = () => {
           setTermsText("43C Lounge – Terms & Conditions\n\nBy proceeding with a booking, you agree to the following:\n\nNo Smoking & No Alcohol\nSmoking and alcohol consumption are strictly prohibited inside the premises.\nA fine of ₹500 will be charged if found smoking.\n\nNo Outside Food\nOutside food and beverages are not allowed.\n\nBehavior Policy\nAny inappropriate, rude, or unacceptable behavior will not be tolerated.\n\nDamage Policy\nAny damage to property must be paid for by the customer.\n\nLegal Action\n43C reserves the right to take strict or legal action in case of misconduct.\n\nResponsibility Clause\nThe person making the booking is fully responsible for all accompanying guests.\n\nNo Refund Policy\nNo refunds will be provided in case of cancellation or no-show.\n\nRight to Refuse Service\nManagement reserves the right to deny or cancel bookings if rules are violated.");
         }
       } catch (e) { console.error(e); }
+    };
+
+    const fetchScreens = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'screens'));
+        let list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (list.length === 0) {
+            // Self-migrate from pricingMap if empty
+            const pSnap = await getDocs(collection(db, 'pricing'));
+            if (!pSnap.empty && pSnap.docs[0].data().screens) {
+                const map = pSnap.docs[0].data().screens;
+                for(const [name, data] of Object.entries(map)) {
+                   await addDoc(collection(db, 'screens'), {
+                      name, 
+                      type: data.type || 'private', 
+                      capacity: data.max_guests || 6, 
+                      is_active: true,
+                      pricing: { gold: data.gold || 299, silver: data.silver || 399, non_member: data.non_member || 499, pricing_type: data.pricing_type || 'group' }
+                   });
+                }
+                list = (await getDocs(collection(db, 'screens'))).docs.map(d => ({ id: d.id, ...d.data() }));
+            }
+        }
+        setScreensList(list);
+        setScreens(list.map(s => s.name));
+        const newMap = {};
+        list.forEach(s => {
+          newMap[s.name] = { 
+            ...(s.pricing || {}), 
+            type: s.type, 
+            max_guests: s.capacity 
+          };
+        });
+        setPricingMap(newMap);
+      } catch (e) { console.error(e); }
+    };
+
+    const saveScreen = async (e) => {
+      e.preventDefault();
+      try {
+        setLoading(true);
+        const data = {
+          name: screenForm.name,
+          type: screenForm.type,
+          capacity: Number(screenForm.capacity),
+          is_active: screenForm.is_active,
+          legacy_link: screenForm.legacy_link || 'None',
+          pricing: screenForm.pricing,
+          updated_at: serverTimestamp()
+        };
+        if (screenForm.id) {
+          await updateDoc(doc(db, 'screens', screenForm.id), data);
+        } else {
+          await addDoc(collection(db, 'screens'), { ...data, created_at: serverTimestamp() });
+        }
+        setShowScreenModal(false);
+        fetchScreens();
+        alert('Screen saved successfully.');
+      } catch (err) { alert('Failed: ' + err.message); }
+      finally { setLoading(false); }
+    };
+
+    const deleteScreen = async (id, name) => {
+      if (!window.confirm(`Delete screen "${name}"?`)) return;
+      try {
+        const q = query(collection(db, 'bookings'), where('screen', '==', name), where('status', 'in', ['pending', 'confirmed']));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+           return alert('Cannot delete screen. There are active (pending/confirmed) bookings associated with it.');
+        }
+        await deleteDoc(doc(db, 'screens', id));
+        fetchScreens();
+      } catch (e) { alert('Delete failed'); }
     };
 
     const saveSettings = async () => {
@@ -272,6 +392,7 @@ const AdminDashboard = () => {
         const allB = (await getDocs(collection(db, 'bookings'))).docs.map(d => d.data());
         const allE = (await getDocs(collection(db, 'expenses'))).docs.map(d => d.data());
         const allFO = (await getDocs(collection(db, 'food_orders'))).docs.map(d => d.data());
+        const allM = (await getDocs(collection(db, 'customer_memberships'))).docs.map(d => d.data());
         const todayB = allB.filter(b => b.booking_date === today);
         const monthB = allB.filter(b => b.booking_date >= startOfMonth && (b.status === 'confirmed' || b.status === 'completed'));
         const monthE = allE.filter(e => e.date >= startOfMonth);
@@ -279,16 +400,21 @@ const AdminDashboard = () => {
         const tStartTs = new Date(today + 'T00:00:00').getTime() / 1000;
         const monthFO = allFO.filter(o => (o.created_at?.seconds || 0) >= mStartTs && (o.status === 'confirmed' || o.status === 'served'));
         const todayFO = allFO.filter(o => (o.created_at?.seconds || 0) >= tStartTs && (o.created_at?.seconds || 0) < tStartTs + 86400);
+        const monthM = allM.filter(m => m.status === 'active' && m.approved_at && (m.approved_at?.seconds || 0) >= mStartTs);
+        
         const monthBRev = monthB.reduce((s, b) => s + (b.final_price || b.price || 0), 0);
         const monthFRev = monthFO.reduce((s, o) => s + (o.final_price || o.total || 0), 0);
+        const monthMRev = monthM.reduce((s, m) => s + Number(m.paid_amount || 0), 0);
         const monthExp = monthE.reduce((s, e) => s + Number(e.amount || 0), 0);
+        
         setAnalytics({
           today_bookings: todayB.length,
           today_revenue: todayB.reduce((s, b) => s + (b.final_price || b.price || 0), 0) + todayFO.reduce((s, o) => s + (o.final_price || o.total || 0), 0),
           monthly_expenses: monthExp,
           monthly_booking_rev: monthBRev,
           monthly_food_rev: monthFRev,
-          net_profit: monthBRev + monthFRev - monthExp,
+          monthly_membership_rev: monthMRev,
+          net_profit: monthBRev + monthFRev + monthMRev - monthExp,
           total_food_orders: allFO.length,
         });
       } catch (e) { console.error(e); }
@@ -343,14 +469,11 @@ const AdminDashboard = () => {
       finally { setLoading(false); }
     };
 
-    const fetchAllBookings = async () => {
+    const fetchAllBookings = () => {
       setLoading(true);
-      try {
-        const snap = await getDocs(collection(db, 'bookings'));
-        const raw = snap.docs.map(d => {
-          const data = d.data();
-          return { id: d.id, ...data };
-        });
+      const q = collection(db, 'bookings');
+      return onSnapshot(q, async (snap) => {
+        const raw = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         raw.sort((a, b) => {
           if (a.status === 'pending' && b.status !== 'pending') return -1;
           if (b.status === 'pending' && a.status !== 'pending') return 1;
@@ -360,13 +483,19 @@ const AdminDashboard = () => {
           return b.booking_date < a.booking_date ? -1 : 1;
         });
         setBookings(raw);
+        setLoading(false);
+        // We still run these once to handle auto-actions, but maybe not on every snapshot for performance?
+        // Actually, onSnapshot is fine because it only triggers when data changes.
         await autoCompleteBookings(raw, (id, status) =>
           setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b))
         );
         await autoCancelPendingBookings(raw, (id, status) =>
           setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b))
         );
-      } catch (e) { console.error(e); } finally { setLoading(false); }
+      }, (err) => {
+        console.error(err);
+        setLoading(false);
+      });
     };
 
 
@@ -389,7 +518,7 @@ const AdminDashboard = () => {
     const fetchCustomers = async () => {
       try {
         const cSnap = await getDocs(collection(db, 'customers'));
-        const memSnap = await getDocs(query(collection(db, 'memberships'), where('status', '==', 'active')));
+        const memSnap = await getDocs(query(collection(db, 'customer_memberships'), where('status', '==', 'active')));
         const memMap = {};
         memSnap.docs.forEach(d => { memMap[d.data().customer_id] = d.data().membership_type || 'silver'; });
         const bSnap = await getDocs(collection(db, 'bookings'));
@@ -430,12 +559,14 @@ const AdminDashboard = () => {
       } catch (e) { console.error(e); }
     };
 
-    const fetchFoodOrders = async () => {
-      try {
-        const snap = await getDocs(collection(db, 'food_orders'));
+    const fetchFoodOrders = () => {
+      const q = collection(db, 'food_orders');
+      return onSnapshot(q, (snap) => {
         const data = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.created_at?.seconds || 0) - (a.created_at?.seconds || 0));
         setFoodOrders(data);
-      } catch (e) { console.error(e); }
+      }, (err) => {
+        console.error(err);
+      });
     };
 
     const fetchCombos = async () => {
@@ -493,6 +624,43 @@ const AdminDashboard = () => {
         await updateDoc(doc(db, 'combos', combo.id), { is_active: !combo.is_active });
         fetchCombos();
       } catch (e) { alert('Failed to toggle status'); }
+    };
+
+    const fetchFoodCombos = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'food_combos'));
+        setFoodCombos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (e) { console.error(e); }
+    };
+
+    const saveFoodCombo = async (e) => {
+      e.preventDefault();
+      try {
+        setLoading(true);
+        const data = {
+          name: foodComboForm.name,
+          price: Number(foodComboForm.price),
+          items: foodComboForm.items, // Array of { id, name, price }
+          image_url: foodComboForm.image_url || '',
+          updated_at: serverTimestamp()
+        };
+        if (foodComboForm.id) {
+          await updateDoc(doc(db, 'food_combos', foodComboForm.id), data);
+        } else {
+          await addDoc(collection(db, 'food_combos'), { ...data, created_at: serverTimestamp() });
+        }
+        setShowFoodComboModal(false);
+        fetchFoodCombos();
+      } catch (err) { alert('Failed: ' + err.message); }
+      finally { setLoading(false); }
+    };
+
+    const deleteFoodCombo = async (id) => {
+      if (!window.confirm('Delete this food combo?')) return;
+      try {
+        await deleteDoc(doc(db, 'food_combos', id));
+        fetchFoodCombos();
+      } catch (err) { alert('Delete failed'); }
     };
 
     const fetchCoupons = async () => {
@@ -607,7 +775,6 @@ const AdminDashboard = () => {
           c.id !== coupon.id
         );
         if (conflict) return alert(`Cannot enable/reset. Another active coupon with code "${coupon.code}" exists.`);
-
         await updateDoc(doc(db, 'coupons', coupon.id), { used_count: 0, active: true });
         alert('Coupon usage reset to 0.');
         fetchCoupons();
@@ -616,11 +783,198 @@ const AdminDashboard = () => {
         alert('Failed to reset'); 
       }
     };
+ 
+    const fetchMembershipPlans = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'membership_plans'));
+        setMembershipPlans(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (e) { console.error('Fetch Memberships Error:', e); }
+    };
+ 
+    const fetchActiveMemberships = async () => {
+      try {
+        const q = query(collection(db, 'customer_memberships'), where('status', '==', 'active'));
+        const snap = await getDocs(q);
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const enriched = list.map(m => {
+          const cust = customers.find(c => c.id === m.customer_id);
+          return { ...m, customer_name: cust?.name || 'Unknown', customer_mobile: cust?.mobile_number || 'Unknown' };
+        });
+        setActiveMemberships(enriched);
+      } catch (e) { console.error('Fetch Active Memberships Error:', e); }
+    };
+ 
+    const fetchMembershipRequests = async () => {
+      try {
+        const q = query(collection(db, 'customer_memberships'), where('status', '==', 'pending'));
+        const snap = await getDocs(q);
+        // Sort by created_at desc (latest first)
+        const allPending = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => (b.created_at?.seconds || 0) - (a.created_at?.seconds || 0));
+        
+        const latestByCustomer = {};
+        const toDeleteIds = [];
+        
+        allPending.forEach(m => {
+          if (!m.customer_id) return;
+          if (!latestByCustomer[m.customer_id]) {
+            latestByCustomer[m.customer_id] = m;
+          } else {
+            toDeleteIds.push(m.id);
+          }
+        });
 
+        // Cleanup duplicate pending requests in background
+        if (toDeleteIds.length > 0) {
+          Promise.all(toDeleteIds.map(id => deleteDoc(doc(db, 'customer_memberships', id))))
+            .catch(err => console.warn('Membership cleanup error:', err));
+        }
+
+        const filteredList = Object.values(latestByCustomer);
+        const enriched = filteredList.map(m => {
+          const cust = customers.find(c => c.id === m.customer_id);
+          return { ...m, customer_name: cust?.name || 'Unknown', customer_mobile: cust?.mobile_number || 'Unknown' };
+        });
+        setMembershipRequests(enriched);
+      } catch (e) { console.error('Fetch Membership Requests Error:', e); }
+    };
+
+    const deleteMembershipReq = async (id) => {
+      if (!window.confirm('Permanently delete this membership request? This action cannot be undone.')) return;
+      try {
+        await deleteDoc(doc(db, 'customer_memberships', id));
+        fetchMembershipRequests();
+        alert('Request deleted.');
+      } catch (err) { alert('Delete failed: ' + err.message); }
+    };
+ 
+    const saveMembership = async (e) => {
+      e.preventDefault();
+      setLoading(true);
+      try {
+        const dynamicCredits = {};
+        screens.forEach(s => {
+          dynamicCredits[s] = Number(membershipForm.per_screen_credits[s] || 0);
+        });
+        
+        const data = {
+          name: membershipForm.name,
+          price: Number(membershipForm.price),
+          validity_days: Number(membershipForm.validity_days),
+          credit_type: membershipForm.credit_type || 'any',
+          credits: Number(membershipForm.credits || 0),
+          per_screen_credits: dynamicCredits,
+          description: membershipForm.description,
+          is_active: !!membershipForm.is_active,
+          updated_at: serverTimestamp()
+        };
+        if (membershipForm.id) {
+          await updateDoc(doc(db, 'membership_plans', membershipForm.id), data);
+          alert('Membership updated!');
+        } else {
+          await addDoc(collection(db, 'membership_plans'), { ...data, created_at: serverTimestamp() });
+          alert('Membership created!');
+        }
+        setShowMembershipModal(false);
+        fetchMembershipPlans();
+      } catch (err) { alert('Failed: ' + err.message); }
+      finally { setLoading(false); }
+    };
+ 
+    const openMemApproveModal = (membership) => {
+      const plan = membershipPlans.find(p => p.id === (membership.membership_id || membership.plan_id));
+      setMemApproveTarget(membership);
+      setMemApproveAmount(plan?.price || 0);
+      setShowMemApproveModal(true);
+    };
+
+    const confirmMemApprove = async () => {
+      if (!memApproveAmount || isNaN(memApproveAmount)) return alert('Enter valid amount.');
+      setLoading(true);
+      try {
+        const membership = memApproveTarget;
+        const plan = membershipPlans.find(p => p.id === (membership.membership_id || membership.plan_id));
+        const days = plan?.validity_days || 30;
+        
+        const dataToSave = {
+          status: 'active',
+          paid_amount: Number(memApproveAmount),
+          start_date: new Date().toISOString(),
+          expiry_date: new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString(),
+          approved_at: serverTimestamp(),
+          credit_type: plan?.credit_type || 'any',
+          credits_remaining: {}
+        };
+
+        if (dataToSave.credit_type === 'any') {
+          dataToSave.credits_remaining.total_hours = plan?.credits || 0;
+        } else {
+          dataToSave.credits_remaining.per_screen = { ...plan?.per_screen_credits };
+        }
+        
+        await updateDoc(doc(db, 'customer_memberships', membership.id), dataToSave);
+        
+        if (membership.customer_id) {
+          const type = membership.plan_name.toLowerCase().includes('gold') ? 'gold' : 
+                       membership.plan_name.toLowerCase().includes('silver') ? 'silver' : 'other';
+          await updateDoc(doc(db, 'customers', membership.customer_id), {
+            is_member: true,
+            membership_type: type,
+            membership_id: membership.id,
+            membership_plan_name: membership.plan_name
+          });
+          await createNotification({ userId: membership.customer_id, type: 'membership_active', message: `Welcome! Your ${membership.plan_name} membership is now ACTIVE. ✨` });
+        }
+
+        // Send WhatsApp Confirmation
+        const expiryDateStr = new Date(dataToSave.expiry_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+        const waMsg = `Hello ${membership.customer_name}! Your ${membership.plan_name} membership at 43C has been CONFIRMED. ✨\n\nIt is valid until: ${expiryDateStr}\n\nYou can now enjoy member-exclusive pricing and perks. Welcome to the Circle! 🏛️`;
+        
+        let cleanPhone = (membership.customer_mobile || '').replace(/\D/g, '');
+        if (cleanPhone) {
+          if (!cleanPhone.startsWith('91')) cleanPhone = '91' + cleanPhone;
+          window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(waMsg)}`, '_blank');
+        }
+
+        alert('Membership approved and earnings logged. WhatsApp message opened.');
+        setShowMemApproveModal(false);
+        fetchActiveMemberships();
+        fetchMembershipRequests();
+        fetchAnalytics();
+      } catch (err) { alert('Failed: ' + err.message); }
+      finally { setLoading(false); }
+    };
+
+ 
+    const deleteMembership = async (id) => {
+      if (!window.confirm('Delete this membership plan? All active/pending memberships using this plan will also be removed. Continue?')) return;
+      try {
+        await deleteDoc(doc(db, 'membership_plans', id));
+        
+        // Cascade delete: remove all memberships with this plan_id
+        const q = query(collection(db, 'customer_memberships'), where('membership_id', '==', id));
+        const snap = await getDocs(q);
+        const batch = snap.docs.map(d => deleteDoc(doc(db, 'customer_memberships', d.id)));
+        await Promise.all(batch);
+        
+        fetchMembershipPlans();
+        fetchActiveMemberships();
+        fetchMembershipRequests();
+        alert('Plan and associated memberships deleted.');
+      } catch (err) { alert('Delete failed: ' + err.message); }
+    };
+ 
+    const toggleMembershipActive = async (plan) => {
+      try {
+        await updateDoc(doc(db, 'membership_plans', plan.id), { is_active: !plan.is_active });
+        fetchMembershipPlans();
+      } catch (e) { alert('Failed'); }
+    };
+ 
     const fetchAdmins = async () => {
       try { const snap = await getDocs(collection(db, 'admins')); setAdmins(snap.docs.map(d => ({ id: d.id, ...d.data() }))); } catch (e) { console.error(e); }
     };
-
+ 
     const deleteBooking = async (id) => {
       if (!window.confirm('PERMANENTLY DELETE this booking? This cannot be undone.')) return;
       try {
@@ -634,36 +988,71 @@ const AdminDashboard = () => {
 
     const updateBookingStatus = async (id, status) => {
       try {
+        const b = bookings.find(x => x.id === id);
+        if (!b) return alert('Booking not found in state.');
+
         await updateDoc(doc(db, 'bookings', id), { status });
-        setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b));
         
         if (status === 'confirmed') {
-          const b = bookings.find(x => x.id === id);
-          if (b) {
-            // 1. In-app notification
-            await createNotification({
-              userId: b.customer_id,
-              type: 'booking_confirmed',
-              message: `Your booking for ${b.booking_date} (${b.screen}) has been CONFIRMED! See you soon. ✨`,
-              bookingId: id
-            });
-
-            // 2. Open WhatsApp for Admin to send official confirmation
-            sendBookingConfirmedWhatsApp({
-              customerMobile: b.customer_mobile,
-              customerName: b.customer_name,
-              slots: b.slots,
-              date: b.booking_date,
-              guests: b.guest_count,
-              totalAmount: b.final_price || b.price,
-              advancePaid: b.advance_paid || 0,
-              comboName: b.combo_applied?.name
-            });
+          // 🆕 Deduct Membership Credit if active and NOT already deducted by customer
+          if (b.customer_id && !b.is_credit_booking) {
+            const mQ = query(collection(db, 'customer_memberships'), 
+              where('customer_id', '==', b.customer_id), 
+              where('status', '==', 'active'),
+              limit(1)
+            );
+            const mSnap = await getDocs(mQ);
+            if (!mSnap.empty) {
+              const mDoc = mSnap.docs[0];
+              const mData = mDoc.data();
+              const expiry = new Date(mData.expiry_date);
+              
+              if (expiry > new Date()) {
+                if (mData.credit_type === 'any') {
+                  const current = mData.credits_remaining?.total_hours || 0;
+                  if (current > 0) {
+                    await updateDoc(doc(db, 'customer_memberships', mDoc.id), {
+                      'credits_remaining.total_hours': current - 1
+                    });
+                    console.log('Any-screen credit deducted.');
+                  }
+                } else if (mData.credit_type === 'per_screen') {
+                  const bucket = SCREEN_MAP[b.screen];
+                  const current = mData.credits_remaining?.per_screen?.[bucket] || 0;
+                  if (bucket && current > 0) {
+                    await updateDoc(doc(db, 'customer_memberships', mDoc.id), {
+                      [`credits_remaining.per_screen.${bucket}`]: current - 1
+                    });
+                    console.log(`Per-screen credit deducted for ${bucket}.`);
+                  }
+                }
+              }
+            }
           }
+
+          // 1. In-app notification for Customer
+          await createNotification({
+            userId: b.customer_id,
+            type: 'booking_confirmed',
+            message: `Your booking for ${b.booking_date} (${b.screen}) has been CONFIRMED! See you soon. ✨`,
+            bookingId: id
+          });
+
+          // 2. Open WhatsApp for Admin
+          sendBookingConfirmedWhatsApp({
+            customerMobile: b.customer_mobile,
+            customerName: b.customer_name,
+            slots: b.slots,
+            date: b.booking_date,
+            guests: b.guest_count,
+            totalAmount: b.final_price || b.price,
+            advancePaid: b.advance_paid || 0,
+            comboName: b.combo_applied?.name
+          });
         }
       } catch (err) {
         console.error('Status update error:', err);
-        alert('Failed to update status');
+        alert('Failed to update status: ' + err.message);
       }
     };
 
@@ -674,8 +1063,31 @@ const AdminDashboard = () => {
     };
 
     const updateOrderStatus = async (id, status) => {
-      await updateDoc(doc(db, 'food_orders', id), { status });
-      setFoodOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
+      try {
+        const o = foodOrders.find(x => x.id === id);
+        if (!o) return;
+
+        await updateDoc(doc(db, 'food_orders', id), { status });
+        setFoodOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
+
+        // Notify customer
+        let msg = '';
+        if (status === 'confirmed') msg = `✅ Your food order is confirmed and being prepared! Order #${id.slice(0, 6)}.`;
+        if (status === 'served') msg = `🎉 Your order has been served. Enjoy! Order #${id.slice(0, 6)}.`;
+        if (status === 'cancelled') msg = `❌ Your food order has been cancelled. Order #${id.slice(0, 6)}.`;
+
+        if (msg && o.customer_id) {
+          await createNotification({ 
+            userId: o.customer_id, 
+            type: `food_${status}`, 
+            message: msg, 
+            orderId: id 
+          });
+        }
+      } catch (err) {
+        console.error('Order status update error:', err);
+        alert('Failed to update order status');
+      }
     };
 
     const updateOrderPrice = async (id, finalPrice) => {
@@ -735,7 +1147,8 @@ const AdminDashboard = () => {
         const data = {
           name: menuForm.name || '',
           category: menuForm.category || 'Drinks',
-          member_price: Number(menuForm.member_price || 0),
+          silver_price: Number(menuForm.silver_price || 0),
+          gold_price: Number(menuForm.gold_price || 0),
           non_member_price: Number(menuForm.non_member_price || 0),
           discount: Number(menuForm.discount) || 0,
           image_url: menuForm.image_url || '',
@@ -752,7 +1165,7 @@ const AdminDashboard = () => {
           });
         }
         setShowMenuModal(false);
-        setMenuForm({ id: '', name: '', category: menuCategories[0] || 'Drinks', member_price: '', non_member_price: '', discount: '', image_url: '' });
+        setMenuForm({ id: '', name: '', category: menuCategories[0] || 'Drinks', silver_price: '', gold_price: '', non_member_price: '', discount: '', image_url: '' });
         setIsEditingMenu(false);
         fetchMenu();
       } catch (err) {
@@ -814,11 +1227,18 @@ const AdminDashboard = () => {
           await updateDoc(doc(db, 'bookings', id), { status: 'cancelled', cancel_reason: cancelReason });
           setBookings(prev => prev.map(x => x.id === id ? { ...x, status: 'cancelled', cancel_reason: cancelReason } : x));
           await createNotification({ userId: b.customer_id, type: 'booking_cancelled', message: `Your booking on ${b.booking_date} has been cancelled. Reason: ${cancelReason}`, bookingId: id });
-        } else {
+        } else if (type === 'order') {
           const o = foodOrders.find(x => x.id === id);
           await updateDoc(doc(db, 'food_orders', id), { status: 'cancelled', cancel_reason: cancelReason });
           setFoodOrders(prev => prev.map(x => x.id === id ? { ...x, status: 'cancelled', cancel_reason: cancelReason } : x));
           if (o) await createNotification({ userId: o.customer_id, type: 'order_cancelled', message: `Your food order #${id.slice(0, 6)} has been cancelled. Reason: ${cancelReason}`, orderId: id });
+        } else if (type === 'membership') {
+          const m = membershipRequests.find(x => x.id === id);
+          await updateDoc(doc(db, 'customer_memberships', id), { status: 'cancelled', cancel_reason: cancelReason });
+          if (m) {
+            await createNotification({ userId: m.customer_id, type: 'membership_cancelled', message: `Your ${m.plan_name} membership request has been declined. Reason: ${cancelReason}` });
+          }
+          fetchMembershipRequests();
         }
       } catch (e) { alert('Failed: ' + e.message); }
       setShowCancelModal(false);
@@ -837,13 +1257,17 @@ const AdminDashboard = () => {
           remaining_amount: remaining,
           total_amount: total,
         });
-        setBookings(prev => prev.map(b => b.id === advanceTarget.id ? { ...b, status: 'confirmed', advance_paid: adv, remaining_amount: remaining, total_amount: total } : b));
-        await createNotification({
-          userId: advanceTarget.customer_id,
-          type: 'booking_confirmed',
-          message: `Your booking at 43C is confirmed! Date: ${advanceTarget.booking_date}, Slots: ${formatSlotsDisplay(advanceTarget.slots)}, Guests: ${advanceTarget.guest_count}. Remaining to pay on arrival: ₹${remaining}. Enjoy your cinematic experience!`,
-          bookingId: advanceTarget.id,
-        });
+        
+        // Notify Customer
+        if (advanceTarget.customer_id) {
+          await createNotification({
+            userId: advanceTarget.customer_id,
+            type: 'booking_confirmed',
+            message: `Your booking at 43C is confirmed! Date: ${advanceTarget.booking_date}, Slots: ${formatSlotsDisplay(advanceTarget.slots)}, Guests: ${advanceTarget.guest_count}. Remaining to pay on arrival: ₹${remaining}. Enjoy your cinematic experience!`,
+            bookingId: advanceTarget.id,
+          });
+        }
+
         sendBookingConfirmedWhatsApp({
           customerMobile: advanceTarget.customer_mobile,
           customerName: advanceTarget.customer_name,
@@ -865,18 +1289,7 @@ const AdminDashboard = () => {
       });
     };
 
-    const updateOrderStatusWithNotif = async (id, status) => {
-      const o = foodOrders.find(x => x.id === id);
-      await updateDoc(doc(db, 'food_orders', id), { status });
-      const updated = foodOrders.map(x => x.id === id ? { ...x, status } : x);
-      setFoodOrders(updated);
-      refreshNotifCounts(null, updated);
-      if (!o) return;
-      let msg = '';
-      if (status === 'confirmed') msg = `✅ Your food order is confirmed and being prepared! Order #${id.slice(0, 6)}.`;
-      if (status === 'served') msg = `🎉 Your order has been served. Enjoy! Order #${id.slice(0, 6)}.`;
-      if (msg) await createNotification({ userId: o.customer_id, type: `food_${status}`, message: msg, orderId: id });
-    };
+    const updateOrderStatusWithNotif = updateOrderStatus;
 
     const openDueModal = (booking) => { setDueTarget(booking); setDueAmount(''); setShowDueModal(true); };
     const saveDueAmount = async () => {
@@ -903,12 +1316,16 @@ const AdminDashboard = () => {
       { id: 'slots', icon: <Clock size={18} />, label: 'Slot Control' },
       { id: 'orders', icon: <UtensilsCrossed size={18} />, label: 'Food Orders' },
       { id: 'menu', icon: <Coffee size={18} />, label: 'Menu' },
-      { id: 'combos', icon: <Ticket size={18} />, label: 'Combos' },
+      { id: 'food_combos', icon: <UtensilsCrossed size={18} />, label: 'Food Combos' },
+      { id: 'combos', icon: <Ticket size={18} />, label: 'Lounge Combos' },
       { id: 'coupons', icon: <Shield size={18} />, label: 'Coupons' },
+      { id: 'memberships', icon: <CreditCard size={18} />, label: 'Memberships' },
       { id: 'members', icon: <Users size={18} />, label: 'Members' },
       { id: 'expenses', icon: <Wallet size={18} />, label: 'Expenses' },
       { id: 'analytics', icon: <BarChart2 size={18} />, label: 'Analytics' },
       { id: 'tasks_live', icon: <CheckSquare size={18} />, label: 'Live Tasks' },
+      { id: 'admin_flow', icon: <BookOpen size={18} />, label: 'Operational Guide' },
+      { id: 'customer_flow', icon: <Map size={18} />, label: 'Customer Flow' },
       { id: 'settings', icon: <Settings size={18} />, label: 'Settings' },
       { id: 'admins', icon: <Lock size={18} />, label: 'Admins' },
     ];
@@ -952,6 +1369,7 @@ const AdminDashboard = () => {
                 <div className="flex items-center gap-3">{item.icon}<span className="uppercase tracking-wider text-[11px]">{item.label}</span></div>
                 {item.id === 'bookings' && notifCount.bookings > 0 && <span className="bg-red-500 text-white text-[9px] w-5 h-5 flex items-center justify-center rounded-full font-black ml-auto">{notifCount.bookings}</span>}
                 {item.id === 'orders' && notifCount.orders > 0 && <span className="bg-red-500 text-white text-[9px] w-5 h-5 flex items-center justify-center rounded-full font-black ml-auto">{notifCount.orders}</span>}
+                {item.id === 'memberships' && notifCount.memberships > 0 && <span className="bg-red-500 text-white text-[9px] w-5 h-5 flex items-center justify-center rounded-full font-black ml-auto">{notifCount.memberships}</span>}
               </button>
             ))}
           </nav>
@@ -1237,8 +1655,37 @@ const AdminDashboard = () => {
                         <div className="flex-1">
                           <p className="text-accent text-[10px] font-black tracking-widest uppercase mb-1">#{o.id.slice(0, 8)}</p>
                           <p className="font-bold">{o.customer_name} <span className="text-white/30 font-normal text-sm">· {o.customer_mobile}</span></p>
-                          <div className="space-y-1 mt-2">
-                            {(o.items || []).map((item, i) => <p key={i} className="text-sm text-white/60">{item.qty}× {item.name} — ₹{item.price * item.qty}</p>)}
+                          <div className="mt-3 space-y-1.5">
+                            {(o.items || []).map((item, i) => {
+                              const isCombo = item.type === 'combo' && item.items && item.items.length > 0;
+                              return isCombo ? (
+                                <div key={i} className="bg-accent/5 border border-accent/20 rounded-xl p-3">
+                                  {/* Combo header: name + total price only */}
+                                  <div className="flex justify-between items-center mb-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[7px] bg-accent text-primary px-1.5 py-0.5 rounded font-black uppercase tracking-widest">Combo</span>
+                                      <p className="text-sm font-black text-white">{item.qty}× {item.name}</p>
+                                    </div>
+                                    <p className="text-accent font-bold text-sm">₹{(item.price || 0) * item.qty}</p>
+                                  </div>
+                                  {/* Prep breakdown — items only, no prices */}
+                                  <div className="space-y-0.5 border-t border-accent/10 pt-2">
+                                    <p className="text-[8px] uppercase tracking-widest text-white/25 font-black mb-1">Prep:</p>
+                                    {item.items.map((sub, si) => (
+                                      <div key={si} className="flex justify-between items-center px-1">
+                                        <p className="text-xs text-white/60">· {sub.name}</p>
+                                        <p className="text-xs font-black text-white">{(sub.qty || 1) * item.qty}×</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : (
+                                /* Regular item: just qty × name, no price */
+                                <div key={i} className="flex items-center py-1.5 px-2 rounded-lg bg-white/3 border border-white/5">
+                                  <p className="text-sm text-white/70">{item.qty}× {item.name}</p>
+                                </div>
+                              );
+                            })}
                           </div>
                           <div className="flex items-center gap-2 mt-2">
                             <p className="text-[10px] text-white/30">Original: ₹{o.original_price || o.total}</p>
@@ -1314,7 +1761,19 @@ const AdminDashboard = () => {
                             <p className="font-black text-sm">{o.customer_name}</p>
                             <span className="text-[9px] uppercase tracking-widest text-blue-400 font-bold">{o.status}</span>
                           </div>
-                          <p className="text-[10px] text-white/50 mb-2 leading-snug">{(o.items||[]).map(i => i.qty + 'x ' + i.name).join(', ')}</p>
+                          <div className="mt-1 mb-2 space-y-1">
+                            {(o.items||[]).map((item, ii) => {
+                              const isCombo = item.type === 'combo' && item.items && item.items.length > 0;
+                              return (
+                                <div key={ii}>
+                                  <p className="text-[10px] text-white/50 font-bold">{item.qty}× {item.name}{isCombo ? ' 🔖' : ''}</p>
+                                  {isCombo && item.items.map((sub, si) => (
+                                    <p key={si} className="text-[9px] text-white/30 pl-3">→ {(sub.qty||1)*item.qty}× {sub.name}</p>
+                                  ))}
+                                </div>
+                              );
+                            })}
+                          </div>
                           <button onClick={() => setView('orders')} className="mt-2 w-full bg-white/5 hover:bg-white/10 text-[9px] uppercase font-black py-1.5 rounded-lg border border-white/10">Manage</button>
                         </div>
                       ))}
@@ -1397,7 +1856,7 @@ const AdminDashboard = () => {
                 <div className="glass-card overflow-x-auto w-full">
                   <table className="w-full text-left">
                     <thead className="bg-white/5 border-b border-white/5">
-                      <tr>{['Image & Item', 'Category', 'Member Price', 'Non-Member Price', 'Actions'].map(h => <th key={h} className="p-4 text-[9px] uppercase tracking-[0.2em] text-white/40 whitespace-nowrap">{h}</th>)}</tr>
+                      <tr>{['Image & Item', 'Category', 'Gold (₹)', 'Silver (₹)', 'Non-MBR (₹)', 'Actions'].map(h => <th key={h} className="p-4 text-[9px] uppercase tracking-[0.2em] text-white/40 whitespace-nowrap">{h}</th>)}</tr>
                     </thead>
                     <tbody>
                       {menuItems
@@ -1416,12 +1875,22 @@ const AdminDashboard = () => {
                             <td className="p-4">
                               <span className="px-2 py-1 bg-accent/10 border border-accent/20 rounded-full text-[9px] font-black uppercase tracking-widest text-accent">{m.category}</span>
                             </td>
-                            <td className="p-4 text-accent font-bold">₹{m.member_price}</td>
-                            <td className="p-4 text-white/60">₹{m.non_member_price}</td>
+                            <td className="p-4"><span className="text-sm font-black text-accent">₹{m.gold_price || '-'}</span></td>
+                            <td className="p-4"><span className="text-sm font-black text-white">₹{m.silver_price || m.member_price || '-'}</span></td>
+                            <td className="p-4 text-white/40 text-sm">₹{m.non_member_price || '-'}</td>
                             <td className="p-4">
                               <div className="flex gap-2">
                                 <button onClick={() => {
-                                  setMenuForm(m);
+                                  setMenuForm({
+                                    id: m.id,
+                                    name: m.name,
+                                    category: m.category,
+                                    gold_price: m.gold_price || '',
+                                    silver_price: m.silver_price || m.member_price || '',
+                                    non_member_price: m.non_member_price || '',
+                                    discount: m.discount || '',
+                                    image_url: m.image_url || ''
+                                  });
                                   setIsEditingMenu(true); setShowMenuModal(true);
                                 }} className="bg-blue-500/20 text-blue-400 border border-blue-500/20 px-3 py-1 text-[9px] rounded-lg uppercase tracking-widest font-bold hover:bg-blue-500/30 transition-colors">Edit</button>
                                 <button onClick={() => deleteMenu(m.id)} className="bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1 text-[9px] rounded-lg uppercase tracking-widest font-bold hover:bg-red-500/20 transition-colors">Delete</button>
@@ -1441,7 +1910,7 @@ const AdminDashboard = () => {
             {view === 'combos' && (
               <motion.div key="com" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                  <h2 className="text-3xl font-heading">Combos <span className="gold-text-gradient italic">Manager</span></h2>
+                  <h2 className="text-3xl font-heading">Lounge <span className="gold-text-gradient italic">Combos</span></h2>
                   <button onClick={() => { 
                     setComboForm({ id: '', name: '', price: '', description: '', includes: '', custom_message: '', is_active: true, max_guests: 2, screen_type: 'Screen 1', image_url: '' }); 
                     setEditingComboId(null);
@@ -1464,6 +1933,35 @@ const AdminDashboard = () => {
                     />
                   ))}
                   {combos.length === 0 && <div className="col-span-full text-center py-12 text-white/30 text-sm">No combos available.</div>}
+                </div>
+              </motion.div>
+            )}
+
+            {view === 'food_combos' && (
+              <motion.div key="fcom" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <h2 className="text-3xl font-heading">Food <span className="gold-text-gradient italic">Combos</span></h2>
+                  <button onClick={() => { setFoodComboForm({ id: '', name: '', price: '', items: [], image_url: '' }); setShowFoodComboModal(true); }}
+                    className="gold-button !px-5 !py-2.5 !text-[10px] flex items-center gap-2 font-black uppercase tracking-widest"><Plus size={14} />Create Combo</button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {foodCombos.map(c => (
+                    <div key={c.id} className="glass-card flex flex-col p-5 group transition-all hover:border-accent/40">
+                      <div className="h-40 bg-white/5 rounded-2xl mb-4 overflow-hidden border border-white/10">
+                        {c.image_url ? <img src={getLocalAsset(c.image_url, 'menu')} className="w-full h-full object-cover" /> : <div className="flex items-center justify-center h-full"><ImageIcon size={40} className="text-white/10" /></div>}
+                      </div>
+                      <h3 className="text-xl font-heading mb-1">{c.name}</h3>
+                      <p className="text-accent font-bold text-lg mb-2">₹{c.price}</p>
+                      <div className="flex-1 space-y-1 mb-4">
+                        <p className="text-[10px] uppercase tracking-widest text-white/30 font-black">Includes:</p>
+                        {c.items.map((i, idx) => <p key={idx} className="text-xs text-white/60">· {i.qty || 1}x {i.name}</p>)}
+                      </div>
+                      <div className="flex gap-2 border-t border-white/5 pt-4">
+                        <button onClick={() => { setFoodComboForm(c); setShowFoodComboModal(true); }} className="flex-1 py-3 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] uppercase font-black">Edit</button>
+                        <button onClick={() => deleteFoodCombo(c.id)} className="p-3 rounded-xl bg-red-500/10 text-red-500 border border-red-500/20"><Trash2 size={16} /></button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </motion.div>
             )}
@@ -1573,6 +2071,168 @@ const AdminDashboard = () => {
                     </tbody>
                   </table>
                 </div>
+              </motion.div>
+            )}
+
+            {view === 'memberships' && (
+              <motion.div key="mbr" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <h2 className="text-3xl font-heading">Membership <span className="gold-text-gradient italic">Circle</span></h2>
+                  <div className="flex gap-2 bg-white/5 p-1 rounded-xl border border-white/10">
+                    {['plans', 'requests', 'active'].map(v => (
+                      <button key={v} onClick={() => setMembershipSubView(v)}
+                        className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 ${membershipSubView === v ? 'bg-accent text-primary' : 'text-white/40 hover:text-white'}`}
+                      >
+                        {v}
+                        {v === 'requests' && notifCount.memberships > 0 && (
+                          <span className="bg-red-500 text-white text-[8px] min-w-[16px] h-4 flex items-center justify-center rounded-full px-1 font-black">{notifCount.memberships}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {membershipSubView === 'plans' && (
+                  <div className="space-y-6">
+                    <div className="flex justify-end">
+                      <button onClick={() => {
+                    setMembershipForm({ 
+                      id: '', name: '', price: '', validity_days: 30, description: '', is_active: true, 
+                      credit_type: 'any', credits: 0, 
+                      per_screen_credits: screens.reduce((acc, name) => ({ ...acc, [name]: 0 }), {})
+                    });
+                    setIsEditingMembership(false); setShowMembershipModal(true);
+                  }} className="gold-button !px-5 !py-2.5 !text-xs flex items-center gap-2 font-black uppercase tracking-widest"><Plus size={14} />Create Plan</button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {membershipPlans.map(plan => (
+                        <div key={plan.id} className={`glass-card p-6 flex flex-col border-accent/20 transition-all hover:border-accent ${!plan.is_active ? 'opacity-50 grayscale' : ''}`}>
+                          <div className="flex justify-between items-start mb-4">
+                            <h3 className="text-xl font-heading text-white">{plan.name}</h3>
+                            <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${plan.is_active ? 'text-green-400 border-green-500/20 bg-green-500/5' : 'text-red-400 border-red-500/20 bg-red-500/5'}`}>
+                              {plan.is_active ? 'Active' : 'Disabled'}
+                            </span>
+                          </div>
+                          <p className="text-accent font-bold text-2xl mb-1">₹{plan.price}</p>
+                          <div className="flex flex-col gap-1 mb-4">
+                            <p className="text-[10px] text-white/40 uppercase tracking-widest italic">{plan.validity_days} Days Validity</p>
+                            {plan.credit_type === 'any' ? (
+                              <p className="text-[10px] text-accent/60 uppercase tracking-widest font-black">{plan.credits || 0} Total Credits</p>
+                            ) : (
+                              <div className="flex flex-wrap gap-2 mt-1">
+                                {Object.entries(plan.per_screen_credits || {}).map(([key, v]) => {
+                                  const linkedScreen = screensList.find(s => s.legacy_link === key || s.name === key);
+                                  const displayName = linkedScreen ? linkedScreen.name : key;
+                                  return (
+                                    <span key={key} className="px-2 py-0.5 bg-accent/10 border border-accent/20 rounded text-[8px] font-black uppercase text-accent/60">
+                                      {displayName}: {v}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-xs text-white/60 mb-6 flex-1 italic leading-relaxed">"{plan.description}"</p>
+                          
+                          <div className="flex gap-2 border-t border-white/5 pt-4">
+                            <button onClick={() => { setMembershipForm(plan); setIsEditingMembership(true); setShowMembershipModal(true); }} 
+                              className="flex-1 py-3 bg-blue-500/10 text-blue-400 border border-blue-500/20 text-[10px] uppercase font-black rounded-xl">Edit</button>
+                            <button onClick={() => toggleMembershipActive(plan)} 
+                              className={`px-4 py-3 rounded-xl border text-[10px] uppercase font-black transition-all ${plan.is_active ? 'border-red-500/20 text-red-500' : 'border-green-500/20 text-green-400'}`}>
+                              {plan.is_active ? 'Disable' : 'Activate'}
+                            </button>
+                            <button onClick={() => deleteMembership(plan.id)} className="p-3 bg-red-500/10 text-red-500 border border-red-500/10 rounded-xl hover:bg-red-500/20 transition-all">
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {membershipSubView === 'requests' && (
+                  <div className="glass-card overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-white/5 border-b border-white/5">
+                        <tr>{['Customer', 'Mobile', 'Requested Plan', 'Date', 'Actions'].map(h => <th key={h} className="p-4 text-[9px] uppercase tracking-[0.2em] text-white/40 whitespace-nowrap">{h}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {membershipRequests.map(m => (
+                          <tr key={m.id} className="border-t border-white/5 hover:bg-white/[0.02]">
+                            <td className="p-4 font-bold">{m.customer_name}</td>
+                            <td className="p-4 text-white/40 text-xs">{m.customer_mobile}</td>
+                            <td className="p-4"><span className="px-2 py-1 bg-accent/10 border border-accent/20 rounded-full text-[9px] font-black uppercase text-accent">{m.plan_name}</span></td>
+                            <td className="p-4 text-white/30 text-xs">{m.created_at?.toDate ? m.created_at.toDate().toLocaleDateString() : 'Pending'}</td>
+                            <td className="p-4">
+                              <div className="flex gap-2">
+                                <button onClick={() => openMemApproveModal(m)} className="px-4 py-2 bg-green-500/10 text-green-500 border border-green-500/20 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-green-500/20 transition-all">Approve</button>
+                                <button onClick={() => openCancelModal(m.id, 'membership')} className="px-4 py-2 bg-red-500/10 text-red-500 border border-red-500/20 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-red-500/10 transition-all">Cancel</button>
+                                <button onClick={() => deleteMembershipReq(m.id)} className="p-2 text-white/20 hover:text-red-500 transition-colors" title="Delete Permanent"><Trash2 size={16} /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                        {membershipRequests.length === 0 && <tr><td colSpan="5" className="p-12 text-center text-white/20 text-xs italic">No pending membership requests.</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {membershipSubView === 'active' && (
+                  <div className="glass-card overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-white/5 border-b border-white/5">
+                        <tr>{['Member', 'Mobile', 'Plan', 'Credits Remaining', 'Validity Left', 'Status'].map(h => <th key={h} className="p-4 text-[9px] uppercase tracking-[0.2em] text-white/40 whitespace-nowrap">{h}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {activeMemberships.map(m => {
+                          const daysLeft = m.expiry_date ? Math.ceil((new Date(m.expiry_date) - new Date()) / (1000 * 60 * 60 * 24)) : 0;
+                          return (
+                            <tr key={m.id} className="border-t border-white/5 hover:bg-white/[0.02]">
+                              <td className="p-4 font-bold">{m.customer_name}</td>
+                              <td className="p-4 text-white/40 text-xs">{m.customer_mobile}</td>
+                              <td className="p-4 uppercase text-[10px] font-bold tracking-widest">{m.plan_name}</td>
+                              <td className="p-4">
+                                {m.credit_type === 'any' ? (
+                                  <span className={`font-black ${(m.credits_remaining?.total_hours || 0) > 0 ? 'text-accent' : 'text-white/20'}`}>
+                                    {m.credits_remaining?.total_hours || 0} Hrs
+                                  </span>
+                                ) : (
+                                  <div className="space-y-1">
+                                    {Object.entries(m.credits_remaining?.per_screen || {}).map(([key, val]) => {
+                                      const autoMap = { 'Mini Lounge': 'Screen 1', 'Studio Lounge': 'Screen 2', 'Grand Lounge': 'TV Screen' };
+                                      const linkedScreen = screensList.find(s => s.legacy_link === key || s.name === key || s.name === autoMap[key]);
+                                      const displayName = linkedScreen ? linkedScreen.name : key;
+                                      return (
+                                        <p key={key} className="text-[9px] font-bold">
+                                          <span className="text-white/30">{displayName}:</span>{' '}
+                                          <span className={val > 0 ? 'text-accent' : 'text-white/10'}>{val}</span>
+                                        </p>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="p-4">
+                                <div className="space-y-1">
+                                  <span className={`text-xs font-bold ${daysLeft < 5 ? 'text-red-400' : 'text-white'}`}>{daysLeft} Days</span>
+                                  <p className="text-[8px] text-white/20 uppercase tracking-widest">Expires: {new Date(m.expiry_date).toLocaleDateString()}</p>
+                                </div>
+                              </td>
+                              <td className="p-4">
+                                <span className={`px-2 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border ${daysLeft > 0 ? 'text-green-400 border-green-500/20 bg-green-500/5' : 'text-red-400 border-red-500/20 bg-red-500/5'}`}>
+                                  {daysLeft > 0 ? 'Active' : 'Expired'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {activeMemberships.length === 0 && <tr><td colSpan="6" className="p-12 text-center text-white/20 text-xs italic">No active memberships found.</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </motion.div>
             )}
 
@@ -1748,71 +2408,42 @@ const AdminDashboard = () => {
                   </div>
 
                   <div className="pt-6 border-t border-white/10">
-                    <h3 className="text-sm uppercase tracking-widest font-black text-accent mb-4 flex items-center gap-2"><Monitor size={14} />Screen Management</h3>
-                    <div className="space-y-3">
-                      {screens.map(screen => (
-                        <div key={screen} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/10">
-                          <span className="font-medium text-sm">{screen}</span>
-                          {!['Screen 1', 'Screen 2', 'TV Screen'].includes(screen) && (
-                            <button onClick={async () => {
-                              const updated = screens.filter(s => s !== screen);
-                              const updMap = {}; updated.forEach(s => { updMap[s] = pricingMap[s] || { gold: 299, silver: 399, non_member: 499 }; });
-                              setScreens(updated); setPricingMap(updMap);
-                              await setDoc(doc(db, 'pricing', 'rates'), { screens: updMap });
-                            }} className="text-red-400 hover:text-red-300 p-1">
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                      <div className="flex gap-3 mt-2">
-                        <input type="text" placeholder="New screen name..." value={newScreenName} onChange={e => setNewScreenName(e.target.value)}
-                          className="flex-1 bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm" />
-                        <button onClick={async () => {
-                          if (!newScreenName.trim()) return;
-                          const s = newScreenName.trim();
-                          const updated = [...screens, s];
-                          const updMap = { ...pricingMap, [s]: { gold: 299, silver: 399, non_member: 499 } };
-                          setScreens(updated); setPricingMap(updMap); setNewScreenName('');
-                          await setDoc(doc(db, 'pricing', 'rates'), { screens: updMap });
-                        }} className="gold-button !px-4 !py-3 !text-[10px] font-black">
-                          <Plus size={14} />
-                        </button>
-                      </div>
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-sm uppercase tracking-widest font-black text-accent flex items-center gap-2"><Monitor size={14} />Screen Management</h3>
+                      <button onClick={() => {
+                        setScreenForm({ id: '', name: '', type: 'private', capacity: 6, is_active: true, pricing: { gold: 299, silver: 399, non_member: 499, pricing_type: 'group' } });
+                        setShowScreenModal(true);
+                       }} className="gold-button !px-4 !py-2 !text-[9px] flex items-center gap-2 animate-pulse"><Plus size={12} />Add Screen</button>
                     </div>
-                  </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {screensList.map(s => (
+                        <div key={s.id} className="navy-card !p-5 border-accent/10 relative group bg-white/[0.03]">
+                          <div className="flex justify-between items-start">
+                            <div>
+                               <h4 className="text-lg font-heading gold-text-gradient">{s.name}</h4>
+                               <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1 mb-3">{s.type} · {s.capacity} Guests</p>
+                            </div>
+                            <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${s.is_active ? 'text-green-400 border-green-500/20' : 'text-red-400 border-red-500/20'}`}>
+                                {s.is_active ? 'Active' : 'Disabled'}
+                            </span>
+                          </div>
+                          
+                          <div className="grid grid-cols-3 gap-2 py-3 border-y border-white/5 my-3">
+                             <div><p className="text-[8px] text-white/30 uppercase">Gold</p><p className="text-xs font-bold text-accent">₹{s.pricing?.gold}</p></div>
+                             <div><p className="text-[8px] text-white/30 uppercase">Silver</p><p className="text-xs font-bold text-white">₹{s.pricing?.silver}</p></div>
+                             <div><p className="text-[8px] text-white/30 uppercase">Non-MBR</p><p className="text-xs font-bold text-white/50">₹{s.pricing?.non_member}</p></div>
+                          </div>
 
-                  <div className="pt-6 border-t border-white/10">
-                    <h3 className="text-sm uppercase tracking-widest font-black text-accent mb-4">Slot Pricing per Screen</h3>
-                    <div className="space-y-4">
-                      {screens.map(screen => (
-                        <div key={screen} className="border border-white/10 rounded-xl p-4 bg-white/[0.02]">
-                          <p className="font-heading font-black mb-3">{screen}</p>
-                          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                            <div><p className="text-[9px] uppercase tracking-widest text-white/40 mb-1">Type</p>
-                              <select className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm rounded-lg outline-none focus:border-accent text-white" value={(pricingMap[screen] || {}).type || 'private'} onChange={e => setPricingMap(p => ({ ...p, [screen]: { ...(p[screen] || {}), type: e.target.value } }))}>
-                                <option value="private" className="bg-[#05071A]">Private (Whole Room)</option>
-                                <option value="shared" className="bg-[#05071A]">Shared (Seats)</option>
-                              </select></div>
-                            <div><p className="text-[9px] uppercase tracking-widest text-white/40 mb-1">Pricing Scheme</p>
-                              <select className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm rounded-lg outline-none focus:border-accent text-white" value={(pricingMap[screen] || {}).pricing_type || 'group'} onChange={e => setPricingMap(p => ({ ...p, [screen]: { ...(p[screen] || {}), pricing_type: e.target.value } }))}>
-                                <option value="group" className="bg-[#05071A]">Flat Base Price</option>
-                                <option value="per_person" className="bg-[#05071A]">Per Person</option>
-                              </select></div>
-                            <div><p className="text-[9px] uppercase tracking-widest text-white/40 mb-1">Non-Member</p>
-                              <input type="number" className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm rounded-lg outline-none focus:border-accent" value={(pricingMap[screen] || {}).non_member || 499} onChange={e => setPricingMap(p => ({ ...p, [screen]: { ...(p[screen] || {}), non_member: Number(e.target.value) } }))} /></div>
-                            <div><p className="text-[9px] uppercase tracking-widest text-white/40 mb-1">Silver</p>
-                              <input type="number" className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm text-gray-300 rounded-lg outline-none focus:border-accent" value={(pricingMap[screen] || {}).silver || 399} onChange={e => setPricingMap(p => ({ ...p, [screen]: { ...(p[screen] || {}), silver: Number(e.target.value) } }))} /></div>
-                            <div><p className="text-[9px] uppercase tracking-widest text-white/40 mb-1">Gold</p>
-                              <input type="number" className="w-full bg-white/5 border border-white/10 px-3 py-2 text-sm gold-text-gradient rounded-lg outline-none focus:border-accent" value={(pricingMap[screen] || {}).gold || 299} onChange={e => setPricingMap(p => ({ ...p, [screen]: { ...(p[screen] || {}), gold: Number(e.target.value) } }))} /></div>
-                            <div><p className="text-[9px] uppercase tracking-widest text-accent mb-1 font-black">Capacity</p>
-                              <input type="number" className="w-full bg-accent/10 border border-accent/20 px-3 py-2 text-sm text-accent rounded-lg outline-none focus:border-accent" value={(pricingMap[screen] || {}).max_guests || 6} onChange={e => setPricingMap(p => ({ ...p, [screen]: { ...(p[screen] || {}), max_guests: Number(e.target.value) } }))} /></div>
+                          <div className="flex gap-2">
+                             <button onClick={() => { setScreenForm(s); setShowScreenModal(true); }} className="flex-1 py-2 bg-blue-500/10 text-blue-400 text-[9px] font-black uppercase tracking-widest rounded-lg border border-blue-500/20 hover:bg-blue-500/20 transition-all">Edit</button>
+                             <button onClick={() => deleteScreen(s.id, s.name)} className="px-3 py-2 bg-red-500/10 text-red-400 text-[9px] font-black uppercase rounded-lg border border-red-500/10 hover:bg-red-500/20 transition-all"><Trash2 size={12} /></button>
                           </div>
                         </div>
                       ))}
-                      <button onClick={savePricing} className="gold-button w-full mt-2 !px-4 !py-3 !text-[10px] font-black uppercase tracking-widest">Save Pricing</button>
                     </div>
                   </div>
+
+
 
                   <div className="pt-6 border-t border-white/10">
                     <h3 className="text-sm uppercase tracking-widest font-black text-accent mb-4 flex items-center gap-2"><ClipboardList size={14} />Terms & Conditions</h3>
@@ -1828,6 +2459,108 @@ const AdminDashboard = () => {
                       <button onClick={saveTerms} className="gold-button !px-6 !py-3 !text-[10px] font-black uppercase tracking-widest">Save Terms</button>
                     </div>
                   </div>
+                </div>
+              </motion.div>
+            )}
+
+            {view === 'admin_flow' && (
+              <motion.div key="af" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-3xl font-heading">Operational <span className="gold-text-gradient italic">Manual</span></h2>
+                  <div className="text-[10px] bg-accent/10 border border-accent/20 text-accent px-4 py-1.5 rounded-full font-black uppercase tracking-widest flex items-center gap-2">
+                    <ShieldCheck size={12} /> Standard Operating Procedures
+                  </div>
+                </div>
+                
+                <div className="grid lg:grid-cols-2 gap-8">
+                   <div className="glass-card p-6 border-white/5 space-y-6">
+                      <h3 className="text-lg font-heading text-accent border-b border-white/5 pb-3">Booking Cycle</h3>
+                      <div className="space-y-4">
+                         {[
+                           { t: 'WhatsApp Req', d: 'Receive request with guest count & date.' },
+                           { t: 'Status Check', d: 'Verify slot availability in Dashboard.' },
+                           { t: 'Lead Confirm', d: 'Contact customer for advance payment.' },
+                           { t: 'Payment Log', d: 'Confirm payment & set status to CONFIRMED.' },
+                           { t: 'Guest Check-in', d: 'Verify OTP at arrival for secure entry.' },
+                           { t: 'Finalize', d: 'Mark COMPLETED after final payment.' }
+                         ].map((s, i) => (
+                           <div key={i} className="flex gap-4 p-3 rounded-xl bg-white/5 border border-white/10">
+                             <span className="text-accent font-black text-xs">0{i+1}</span>
+                             <div>
+                               <p className="font-bold text-xs uppercase tracking-widest">{s.t}</p>
+                               <p className="text-[10px] text-white/40">{s.d}</p>
+                             </div>
+                           </div>
+                         ))}
+                      </div>
+                   </div>
+
+                   <div className="space-y-8">
+                      <div className="glass-card p-6 border-white/5 space-y-6">
+                        <h3 className="text-lg font-heading text-accent border-b border-white/5 pb-3">Food & Service</h3>
+                        <div className="space-y-4">
+                           {[
+                             { t: 'Alert', d: 'Receive notification for new food order.' },
+                             { t: 'Confirm', d: 'Mark as CONFIRMED if kitchen is ready.' },
+                             { t: 'Serve', d: 'Prepare and deliver. Mark as SERVED.' },
+                             { t: 'Bill', d: 'Ensure price is added to final settlement.' }
+                           ].map((s, i) => (
+                             <div key={i} className="flex gap-4 p-3 rounded-xl bg-white/5 border border-white/10">
+                               <span className="text-accent font-black text-xs">0{i+1}</span>
+                               <div>
+                                 <p className="font-bold text-xs uppercase tracking-widest">{s.t}</p>
+                                 <p className="text-[10px] text-white/40">{s.d}</p>
+                               </div>
+                             </div>
+                           ))}
+                        </div>
+                      </div>
+
+                      <div className="navy-card p-6 border-accent/20 bg-accent/5">
+                         <p className="text-[9px] uppercase font-black text-accent tracking-widest mb-2 flex items-center gap-2">
+                           <Zap size={10} /> Shift Reminder
+                         </p>
+                         <p className="text-xs text-white/60 italic font-light">
+                           "Double-check slot availability before confirming manual payments to avoid double bookings."
+                         </p>
+                      </div>
+                   </div>
+                </div>
+              </motion.div>
+            )}
+
+            {view === 'customer_flow' && (
+              <motion.div key="cf" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
+                <div className="flex justify-between items-center">
+                  <h2 className="text-3xl font-heading">User <span className="gold-text-gradient italic">Experience</span></h2>
+                  <div className="text-[10px] bg-blue-500/10 border border-blue-500/20 text-blue-400 px-4 py-1.5 rounded-full font-black uppercase tracking-widest flex items-center gap-2">
+                    <Users size={12} /> The Customer Journey
+                  </div>
+                </div>
+
+                <div className="glass-card p-8 border-white/5 relative overflow-hidden">
+                   <div className="absolute top-0 right-0 w-64 h-64 bg-accent/5 blur-3xl rounded-full -z-10" />
+                   <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {[
+                        { t: 'Login', d: 'Register via Mobile Number.' },
+                        { t: 'Discovery', d: 'Choose Date, Screen & Slots.' },
+                        { t: 'Request', d: 'Send WhatsApp booking data.' },
+                        { t: 'Advance', d: 'Pay to confirm membership/slot.' },
+                        { t: 'OTP Wait', d: 'Receive OTP 30m before visit.' },
+                        { t: 'Arrival', d: 'Visit 43C & Enter OTP.' },
+                        { t: 'Settlement', d: 'Pay due amount & Enter Lounge.' },
+                        { t: 'Food', d: 'Browse Menu & Order via WhatsApp.' },
+                        { t: 'Enjoy', d: 'Experience 43C Luxury.' }
+                      ].map((s, i) => (
+                        <div key={i} className="p-5 rounded-2xl bg-white/5 border border-white/10 hover:border-accent/40 transition-all">
+                           <div className="w-8 h-8 rounded-lg bg-accent text-primary flex items-center justify-center font-black text-xs mb-3 shadow-lg">
+                             {i+1}
+                           </div>
+                           <h4 className="text-sm font-black uppercase tracking-widest mb-1">{s.t}</h4>
+                           <p className="text-[10px] text-white/40 leading-relaxed font-light">{s.d}</p>
+                        </div>
+                      ))}
+                   </div>
                 </div>
               </motion.div>
             )}
@@ -1938,16 +2671,23 @@ const AdminDashboard = () => {
 
                 <div className="space-y-1.5">
                   <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Pricing (₹) *</label>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <p className="text-[9px] text-accent/60 mb-1.5">Member Price</p>
+                      <p className="text-[9px] text-accent/60 mb-1.5">Gold Price</p>
                       <input type="number" required placeholder="e.g. 150"
                         className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm"
-                        value={menuForm.member_price} onChange={e => setMenuForm({ ...menuForm, member_price: e.target.value })}
+                        value={menuForm.gold_price} onChange={e => setMenuForm({ ...menuForm, gold_price: e.target.value })}
                       />
                     </div>
                     <div>
-                      <p className="text-[9px] text-white/40 mb-1.5">Non-Member Price</p>
+                      <p className="text-[9px] text-white/40 mb-1.5 font-bold">Silver Price</p>
+                      <input type="number" required placeholder="e.g. 180"
+                        className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm"
+                        value={menuForm.silver_price} onChange={e => setMenuForm({ ...menuForm, silver_price: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <p className="text-[9px] text-white/40 mb-1.5">Non-Member</p>
                       <input type="number" required placeholder="e.g. 200"
                         className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm"
                         value={menuForm.non_member_price} onChange={e => setMenuForm({ ...menuForm, non_member_price: e.target.value })}
@@ -1973,6 +2713,89 @@ const AdminDashboard = () => {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+
+        {showScreenModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowScreenModal(false)} />
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#05071A] p-8 max-w-lg w-full relative z-10 border-accent/20">
+               <h3 className="text-2xl font-heading gold-text-gradient mb-6">{screenForm.id ? 'Edit Screen' : 'Add New Screen'}</h3>
+               <form onSubmit={saveScreen} className="space-y-5">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] uppercase tracking-widest text-white/40">Screen Name</label>
+                      <input type="text" required value={screenForm.name} onChange={e => setScreenForm({...screenForm, name: e.target.value})} className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] uppercase tracking-widest text-white/40">Type</label>
+                      <select value={screenForm.type} onChange={e => setScreenForm({...screenForm, type: e.target.value})} className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm">
+                        <option value="private" className="bg-primary">Private (Lounge)</option>
+                        <option value="shared" className="bg-primary">Shared (Cafe)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] uppercase tracking-widest text-white/40">Capacity (Guests)</label>
+                      <input type="number" required value={screenForm.capacity} onChange={e => setScreenForm({...screenForm, capacity: e.target.value})} className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm" />
+                    </div>
+                    <div className="flex items-center gap-3 pt-6">
+                       <button type="button" onClick={() => setScreenForm({...screenForm, is_active: !screenForm.is_active})} className={`w-10 h-6 rounded-full relative transition-all ${screenForm.is_active ? 'bg-accent' : 'bg-white/10'}`}>
+                          <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${screenForm.is_active ? 'left-5' : 'left-1'}`} />
+                       </button>
+                       <span className="text-[10px] uppercase font-black text-white">{screenForm.is_active ? 'Active' : 'Hidden'}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="pt-4 border-t border-white/5 space-y-4">
+                    <p className="text-[10px] uppercase tracking-[0.2em] font-black text-accent">Pricing Config</p>
+                    <div className="grid grid-cols-2 gap-4">
+                       <div className="space-y-1.5">
+                        <label className="text-[9px] uppercase tracking-widest text-white/40">Pricing Type</label>
+                        <select value={screenForm.pricing.pricing_type} onChange={e => setScreenForm({...screenForm, pricing: {...screenForm.pricing, pricing_type: e.target.value}})} className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm">
+                          <option value="group" className="bg-primary">Flat Rate</option>
+                          <option value="per_person" className="bg-primary">Per Person</option>
+                        </select>
+                       </div>
+                       <div className="space-y-1.5">
+                        <label className="text-[9px] uppercase tracking-widest text-white/40">Non-Member Price</label>
+                        <input type="number" value={screenForm.pricing.non_member} onChange={e => setScreenForm({...screenForm, pricing: {...screenForm.pricing, non_member: Number(e.target.value)}})} className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm" />
+                       </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                       <div className="space-y-1.5">
+                        <label className="text-[9px] uppercase tracking-widest text-white/40 font-bold">Silver Member Price</label>
+                        <input type="number" value={screenForm.pricing.silver} onChange={e => setScreenForm({...screenForm, pricing: {...screenForm.pricing, silver: Number(e.target.value)}})} className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm" />
+                       </div>
+                       <div className="space-y-1.5">
+                        <label className="text-[9px] uppercase tracking-widest text-accent font-black">Gold Elite Price</label>
+                        <input type="number" value={screenForm.pricing.gold} onChange={e => setScreenForm({...screenForm, pricing: {...screenForm.pricing, gold: Number(e.target.value)}})} className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm gold-text-gradient" />
+                       </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 pt-2">
+                    <label className="text-[9px] uppercase tracking-widest text-white/40">Legacy Membership Link (For Credits)</label>
+                    <select 
+                      value={screenForm.legacy_link || 'None'} 
+                      onChange={e => setScreenForm({...screenForm, legacy_link: e.target.value})} 
+                      className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm"
+                    >
+                      <option value="None" className="bg-primary">None (No Legacy Mapping)</option>
+                      <option value="Mini Lounge" className="bg-primary">Mini Lounge</option>
+                      <option value="Studio Lounge" className="bg-primary">Studio Lounge</option>
+                      <option value="Grand Lounge" className="bg-primary">Grand Lounge</option>
+                    </select>
+                    <p className="text-[7px] text-white/20 uppercase tracking-widest">Maps this screen to old membership categories for credit usage.</p>
+                  </div>
+
+                  <div className="flex gap-3 pt-4">
+                    <button type="button" onClick={() => setShowScreenModal(false)} className="flex-1 py-4 text-[10px] uppercase font-black text-white/40 hover:bg-white/5 rounded-xl border border-white/10">Discard</button>
+                    <button type="submit" className="flex-[2] gold-button !py-4 !text-[10px] uppercase font-black">Commit Changes</button>
+                  </div>
+               </form>
             </motion.div>
           </div>
         )}
@@ -2267,6 +3090,170 @@ const AdminDashboard = () => {
               <div className="flex gap-3">
                 <button onClick={() => setShowAdvanceModal(false)} className="flex-1 py-3 rounded-xl border border-white/10 text-white/40 text-[10px] uppercase font-black">Back</button>
                 <button onClick={confirmAdvancePayment} className="flex-1 gold-button !py-3 !text-[10px] font-black uppercase tracking-widest text-wrap leading-tight">Confirm & Send WhatsApp</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+        {/* Food Combo Modal */}
+        {showFoodComboModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowFoodComboModal(false)} />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="glass-card w-full max-w-2xl max-h-[90dvh] overflow-y-auto relative z-10 p-8">
+              <h2 className="text-2xl font-heading mb-6">{foodComboForm.id ? 'Edit' : 'New'} Food Combo</h2>
+              <form onSubmit={saveFoodCombo} className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest text-white/40 font-black">Combo Name</label>
+                    <input type="text" required value={foodComboForm.name} onChange={e => setFoodComboForm({ ...foodComboForm, name: e.target.value })} className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] uppercase tracking-widest text-white/40 font-black">Combo Price (₹)</label>
+                    <input type="number" required value={foodComboForm.price} onChange={e => setFoodComboForm({ ...foodComboForm, price: e.target.value })} className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] uppercase tracking-widest text-white/40 font-black">Image URL / Path</label>
+                  <input type="text" value={foodComboForm.image_url} onChange={e => setFoodComboForm({ ...foodComboForm, image_url: e.target.value })} className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent" placeholder="e.g. burger_combo.jpg" />
+                </div>
+                <div className="space-y-4">
+                  <label className="text-[10px] uppercase tracking-widest text-white/40 font-black">Select Items & Quantities</label>
+                  <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto p-4 bg-white/5 rounded-2xl border border-white/10">
+                    {menuItems.map(item => {
+                      const selectedItem = foodComboForm.items.find(i => i.id === item.id);
+                      const isSelected = !!selectedItem;
+                      return (
+                        <div key={item.id} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isSelected ? 'bg-accent/10 border-accent' : 'bg-white/5 border-white/10'}`}>
+                          <button type="button" onClick={() => {
+                            if (isSelected) { setFoodComboForm({ ...foodComboForm, items: foodComboForm.items.filter(i => i.id !== item.id) }); }
+                            else { setFoodComboForm({ ...foodComboForm, items: [...foodComboForm.items, { id: item.id, name: item.name, price: item.non_member_price, qty: 1 }] }); }
+                          }} className="flex items-center gap-3 flex-1 text-left">
+                            <div className={`w-4 h-4 rounded border flex items-center justify-center ${isSelected ? 'bg-accent border-accent' : 'border-white/20'}`}>
+                              {isSelected && <CheckCircle2 size={10} className="text-primary" />}
+                            </div>
+                            <span className={`text-xs font-bold ${isSelected ? 'text-accent' : 'text-white/40'}`}>{item.name}</span>
+                            <span className="text-[10px] ml-auto opacity-30">₹{item.non_member_price}</span>
+                          </button>
+                          
+                          {isSelected && (
+                            <div className="flex items-center gap-2 bg-black/20 rounded-lg p-1 border border-white/5">
+                              <span className="text-[8px] uppercase font-black text-white/30 px-1">Qty</span>
+                              <input 
+                                type="number" 
+                                min="1"
+                                value={selectedItem.qty || 1}
+                                onChange={(e) => {
+                                  const val = Math.max(1, parseInt(e.target.value) || 1);
+                                  setFoodComboForm({
+                                    ...foodComboForm,
+                                    items: foodComboForm.items.map(i => i.id === item.id ? { ...i, qty: val } : i)
+                                  });
+                                }}
+                                className="w-12 bg-transparent text-xs text-center font-bold text-accent outline-none"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="flex gap-4 pt-4">
+                  <button type="button" onClick={() => setShowFoodComboModal(false)} className="flex-1 py-4 border border-white/10 rounded-xl text-[10px] uppercase font-black text-white/40">Cancel</button>
+                  <button type="submit" disabled={loading} className="flex-1 gold-button !py-4 !text-[10px] font-black uppercase tracking-widest">{loading ? 'Saving...' : 'Save Combo'}</button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+
+        {showMembershipModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowMembershipModal(false)} />
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#05071A] p-8 max-w-md w-full relative z-10 border-accent/20 space-y-6 max-h-[85vh] overflow-y-auto">
+              <h3 className="text-2xl font-heading gold-text-gradient">{isEditingMembership ? 'Edit' : 'Create'} Membership</h3>
+              <form onSubmit={saveMembership} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Plan Name</label>
+                  <input type="text" required placeholder="e.g. Gold, Silver, Elite" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm" value={membershipForm.name} onChange={e => setMembershipForm({ ...membershipForm, name: e.target.value })} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Price (₹)</label>
+                    <input type="number" required placeholder="999" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm font-bold text-accent" value={membershipForm.price} onChange={e => setMembershipForm({ ...membershipForm, price: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Validity (Days)</label>
+                    <input type="number" required placeholder="30" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm font-bold" value={membershipForm.validity_days} onChange={e => setMembershipForm({ ...membershipForm, validity_days: e.target.value })} />
+                  </div>
+                </div>
+                <div className="space-y-4 bg-white/5 p-4 rounded-2xl border border-white/10">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] uppercase tracking-widest text-white/40 font-black">Credit Type</label>
+                    <div className="flex gap-2 bg-black/20 p-1 rounded-lg">
+                      <button type="button" onClick={() => setMembershipForm({ ...membershipForm, credit_type: 'any' })}
+                        className={`px-3 py-1.5 text-[8px] font-black uppercase rounded-md transition-all ${membershipForm.credit_type === 'any' ? 'bg-accent text-primary' : 'text-white/40'}`}>Any Screen</button>
+                      <button type="button" onClick={() => setMembershipForm({ ...membershipForm, credit_type: 'per_screen' })}
+                        className={`px-3 py-1.5 text-[8px] font-black uppercase rounded-md transition-all ${membershipForm.credit_type === 'per_screen' ? 'bg-accent text-primary' : 'text-white/40'}`}>Per Screen</button>
+                    </div>
+                  </div>
+
+                  {membershipForm.credit_type === 'any' ? (
+                    <div className="space-y-1.5">
+                      <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Total Hours/Credits</label>
+                      <input type="number" placeholder="Enter credits (e.g. 10)" className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm" value={membershipForm.credits} onChange={e => setMembershipForm({ ...membershipForm, credits: e.target.value })} />
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3">
+                      {screens.map(screen => (
+                        <div key={screen} className="flex items-center gap-3 bg-black/20 p-3 rounded-xl border border-white/5">
+                          <label className="text-[9px] uppercase font-bold text-white/60 flex-1">{screen}</label>
+                          <input 
+                            type="number" 
+                            min="0"
+                            placeholder="0" 
+                            className="w-20 bg-white/5 border border-white/10 p-2 rounded-lg text-center text-xs outline-none focus:border-accent" 
+                            value={membershipForm.per_screen_credits[screen] || ''} 
+                            onChange={e => setMembershipForm({ 
+                              ...membershipForm, 
+                              per_screen_credits: { ...membershipForm.per_screen_credits, [screen]: e.target.value } 
+                            })} 
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Perks & Description</label>
+                  <textarea required placeholder="Free snacks, 20% off bookings..." className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm h-32 resize-none" value={membershipForm.description} onChange={e => setMembershipForm({ ...membershipForm, description: e.target.value })} />
+                </div>
+                <div className="flex items-center gap-3 bg-white/5 p-4 rounded-xl border border-white/10">
+                  <input type="checkbox" id="mem_active" checked={membershipForm.is_active} onChange={(e) => setMembershipForm(p => ({...p, is_active: e.target.checked}))} className="w-5 h-5 accent-accent" />
+                  <label htmlFor="mem_active" className="text-xs text-white/70 font-bold uppercase tracking-widest">Plan is Active</label>
+                </div>
+                <button disabled={loading} className="w-full gold-button !py-4 font-black uppercase tracking-widest text-sm shadow-lg shadow-accent/10">{loading ? 'Saving...' : isEditingMembership ? 'Update Membership' : 'Create Membership'}</button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+        {showMemApproveModal && memApproveTarget && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setShowMemApproveModal(false)} />
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="glass-card max-w-sm w-full relative z-10 p-8 border-accent/20 space-y-6">
+              <div className="text-center space-y-2">
+                <Crown size={32} className="mx-auto text-accent mb-2" />
+                <h3 className="text-xl font-heading gold-text-gradient">Approve Membership</h3>
+                <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">{memApproveTarget.customer_name} · {memApproveTarget.plan_name}</p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Final Amount Received (₹)</label>
+                <input type="number" value={memApproveAmount} onChange={e => setMemApproveAmount(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-xl font-heading text-center text-accent" />
+                <p className="text-[9px] text-white/20 text-center">This will be logged in monthly earnings.</p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setShowMemApproveModal(false)} className="flex-1 py-3 rounded-xl border border-white/10 text-white/40 text-[10px] uppercase font-black">Cancel</button>
+                <button onClick={confirmMemApprove} disabled={loading} className="flex-1 gold-button !py-3 !text-[10px] font-black uppercase tracking-widest">{loading ? 'Processing...' : 'Confirm & Activate'}</button>
               </div>
             </motion.div>
           </div>

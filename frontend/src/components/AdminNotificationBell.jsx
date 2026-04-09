@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bell, Calendar, UtensilsCrossed, X } from 'lucide-react';
+import { Bell, Calendar, UtensilsCrossed, X, Crown } from 'lucide-react';
 import { db } from '../lib/firebase';
 import {
   collection, query, onSnapshot, updateDoc, doc, orderBy, where
@@ -48,6 +48,7 @@ const AdminNotificationBell = ({ onNavigate }) => {
     setOpen(false);
     if (onNavigate) {
       if (n.booking_id) onNavigate('bookings');
+      else if (n.type?.includes('membership')) onNavigate('memberships');
       else onNavigate('orders');
     }
   };
@@ -59,6 +60,7 @@ const AdminNotificationBell = ({ onNavigate }) => {
 
   const getIcon = (type) => {
     if (type?.includes('food') || type?.includes('order')) return <UtensilsCrossed size={13} className="text-orange-400" />;
+    if (type?.includes('membership')) return <Crown size={13} className="text-accent" />;
     return <Calendar size={13} className="text-blue-400" />;
   };
 

@@ -2,14 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useLocation } from 'react-router-dom';
 import { db } from '../lib/firebase';
-import { collection, getDocs, addDoc, query, where, serverTimestamp } from 'firebase/firestore';
-import { Calendar, Clock, Users, CheckCircle2, MessageCircle } from 'lucide-react';
+import { collection, getDocs, addDoc, query, where, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
+import { Calendar, Clock, Users, CheckCircle2, MessageCircle, Star } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   SLOT_HOURS, getSlotLabel, getAvailableDates, getSlotStatusMap, formatSlotsDisplay, getTodayStr
 } from '../utils/slots';
 import { getWhatsAppNumber } from '../utils/settings';
 import { createNotification } from '../utils/firebaseHelpers';
+
+const SCREEN_MAP = {
+  'Screen 1': 'Mini Lounge',
+  'Screen 2': 'Studio Lounge',
+  'TV Screen': 'Grand Lounge'
+};
 
 const BookingPage = () => {
   const { customer, checkMobile, login, register } = useAuth();
@@ -26,15 +32,11 @@ const BookingPage = () => {
   const [selectedDate, setSelectedDate] = useState(getTodayStr());
   const [selectedScreen, setSelectedScreen] = useState('Screen 1');
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const screens = ['Screen 1', 'Screen 2', 'TV Screen'];
+  const [screens, setScreens] = useState(['Screen 1', 'Screen 2', 'TV Screen']);
   const [selectedSlots, setSelectedSlots] = useState([]);
   const [slotStatus, setSlotStatus] = useState({});
   const [guestCount, setGuestCount] = useState(2);
-  const [pricingMap, setPricingMap] = useState({
-    'Screen 1': { gold: 299, silver: 399, non_member: 499 },
-    'Screen 2': { gold: 299, silver: 399, non_member: 499 },
-    'TV Screen': { gold: 199, silver: 299, non_member: 399 }
-  });
+  const [pricingMap, setPricingMap] = useState({});
   const [membershipType, setMembershipType] = useState('non_member');
   const isMember = membershipType !== 'non_member';
   const availableDates = getAvailableDates();
@@ -50,6 +52,10 @@ const BookingPage = () => {
   // Combo state
   const [combos, setCombos] = useState([]);
   const [selectedCombo, setSelectedCombo] = useState(null);
+
+  // Membership Credit State
+  const [useCredits, setUseCredits] = useState(false);
+  const [activeMembership, setActiveMembership] = useState(null);
 
   useEffect(() => {
     fetchCombos();
@@ -95,26 +101,42 @@ const BookingPage = () => {
     if (!customer) return;
     try {
       const q = query(
-        collection(db, 'memberships'),
+        collection(db, 'customer_memberships'),
         where('customer_id', '==', customer.id),
         where('status', '==', 'active')
       );
       const snap = await getDocs(q);
       if (!snap.empty) {
-        setMembershipType(snap.docs[0].data().membership_type || 'silver');
+        const mData = { id: snap.docs[0].id, ...snap.docs[0].data() };
+        // Check expiry here as well to be safe
+        if (new Date(mData.expiry_date) > new Date()) {
+           setActiveMembership(mData);
+           setMembershipType(mData.membership_type || 'silver');
+        }
       }
     } catch (err) { console.error(err); }
   };
 
   const fetchPricing = async () => {
     try {
-      const snap = await getDocs(collection(db, 'pricing'));
-      if (!snap.empty) {
-        const data = snap.docs[0].data();
-        if (data.screens) {
-          setPricingMap(data.screens);
-          return data.screens;
-        }
+      const snap = await getDocs(query(collection(db, 'screens'), where('is_active', '==', true)));
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (list.length > 0) {
+          const names = list.map(s => s.name);
+          setScreens(names);
+          if (!names.includes(selectedScreen)) setSelectedScreen(names[0]);
+          
+          const pMap = {};
+          list.forEach(s => {
+            pMap[s.name] = { 
+                ...(s.pricing || {}), 
+                type: s.type, 
+                max_guests: s.capacity,
+                legacy_link: s.legacy_link || 'None'
+            };
+          });
+          setPricingMap(pMap);
+          return pMap;
       }
     } catch (err) { console.error(err); }
     return {};
@@ -139,33 +161,50 @@ const BookingPage = () => {
   const toggleSlot = (hour) => {
     if (slotStatus[hour] !== 'available') return;
     
-    if (selectedCombo && selectedCombo.number_of_slots > 1) {
-      const numSlots = Number(selectedCombo.number_of_slots);
-      // If already selected, clear it
+    if (selectedCombo) {
+      const numSlots = Number(selectedCombo.number_of_slots || 1);
+      
       if (selectedSlots.includes(hour)) {
         setSelectedSlots([]);
         return;
       }
 
-      // Try to select consecutive slots starting from 'hour'
       const requested = [];
       for (let i = 0; i < numSlots; i++) {
         const h = hour + i;
-        if (h > 23 || slotStatus[h] !== 'available') {
-          alert(`This combo requires ${numSlots} consecutive slots. Some slots in this range are unavailable.`);
+        if (h > 22 || slotStatus[h] !== 'available') {
+          if (numSlots > 1) {
+            alert(`This combo requires ${numSlots} consecutive slots. Some slots in this range are unavailable.`);
+          }
           return;
         }
         requested.push(h);
       }
+      
+      if (useCredits && activeMembership) {
+        const screenKey = { 'Screen 1': 'Mini Lounge', 'Screen 2': 'Studio Lounge', 'TV Screen': 'Grand Lounge' }[selectedScreen];
+        const avail = activeMembership.credit_type === 'any' ? (activeMembership.credits_remaining?.total_hours || 0) : (activeMembership.credits_remaining?.per_screen?.[screenKey] || 0);
+        if (requested.length > avail) {
+            alert(`You only have ${avail} credits for this screen. Please select fewer slots or disable "Use Credits".`);
+            return;
+        }
+      }
       setSelectedSlots(requested);
     } else {
+      if (useCredits && activeMembership && !selectedSlots.includes(hour)) {
+        const screenKey = { 'Screen 1': 'Mini Lounge', 'Screen 2': 'Studio Lounge', 'TV Screen': 'Grand Lounge' }[selectedScreen];
+        const avail = activeMembership.credit_type === 'any' ? (activeMembership.credits_remaining?.total_hours || 0) : (activeMembership.credits_remaining?.per_screen?.[screenKey] || 0);
+        if (selectedSlots.length + 1 > avail) {
+            alert(`You only have ${avail} credits for this screen.`);
+            return;
+        }
+      }
       setSelectedSlots(prev =>
         prev.includes(hour) ? prev.filter(h => h !== hour) : [...prev, hour]
       );
     }
   };
 
-  // ─── Auth handlers ───
   const handleMobileSubmit = async (e) => {
     e.preventDefault();
     if (mobile.length < 10) return alert('Enter a valid 10-digit mobile number.');
@@ -174,7 +213,6 @@ const BookingPage = () => {
       const { exists, name: existingName } = await checkMobile(mobile);
       if (exists) {
         await login(mobile);
-        // step change handled by useEffect on customer
       } else {
         setName('');
         setAuthMode('register');
@@ -190,16 +228,10 @@ const BookingPage = () => {
     setLoading(true);
     try {
       await register({ name: name.trim(), mobile });
-      // step change handled by useEffect on customer
     } catch (err) {
       alert('Registration failed: ' + (err.message || err));
     } finally { setLoading(false); }
   };
-
-  // ─── Booking handler ───
-
-  const currentScreenPricingForApply = pricingMap[selectedScreen] || pricingMap['Screen 1'];
-  const slotPriceForApply = currentScreenPricingForApply[membershipType] || currentScreenPricingForApply.non_member;
 
   const handleApplyCoupon = async () => {
     setCouponError('');
@@ -217,10 +249,8 @@ const BookingPage = () => {
       if (!c.active) return setCouponError('Coupon is inactive');
       if (c.applies_to !== 'both' && c.applies_to !== 'booking') return setCouponError('Coupon not valid for bookings');
       
-      // Total usage limit
       if (c.max_usage > 0 && (c.used_count || 0) >= c.max_usage) return setCouponError('Coupon total usage limit reached');
       
-      // Expiry Check (Date-safe)
       if (c.expiry_date) {
         const expDate = new Date(c.expiry_date);
         const today = new Date();
@@ -230,7 +260,6 @@ const BookingPage = () => {
 
       if (c.type === 'free_hour' && selectedSlots.length === 0) return setCouponError('Select slots first');
 
-      // Check usage per user
       if (c.usage_per_user > 0) {
         const bQ = query(collection(db, 'bookings'), where('customer_id', '==', customer.id), where('coupon_applied', '==', couponCode.toUpperCase()));
         const bSnap = await getDocs(bQ);
@@ -249,10 +278,12 @@ const BookingPage = () => {
     if (!termsAccepted) return alert('You must agree to the Terms & Conditions to proceed.');
     setLoading(true);
     try {
-      const currentScreenPricing = pricingMap[selectedScreen] || pricingMap['Screen 1'];
-      const slotPrice = currentScreenPricing[membershipType] || currentScreenPricing.non_member;
+      const currentScreenPricing = pricingMap[selectedScreen] || Object.values(pricingMap)[0] || { gold: 299, silver: 399, non_member: 499, type: 'private', pricing_type: 'group' };
+      const slotPrice = currentScreenPricing[membershipType] || currentScreenPricing.non_member || 499;
+      const includedSlots = selectedCombo ? Number(selectedCombo.number_of_slots || 0) : 0;
+      const extraSlots = Math.max(0, selectedSlots.length - includedSlots);
+      let baseOriginal = slotPrice * extraSlots;
       
-      let baseOriginal = slotPrice * selectedSlots.length;
       if (currentScreenPricing.pricing_type === 'per_person') {
         baseOriginal = baseOriginal * guestCount;
       }
@@ -264,13 +295,12 @@ const BookingPage = () => {
         if (appliedCoupon.type === 'free_hour') {
           discountAmount = (currentScreenPricing.pricing_type === 'per_person') ? (slotPrice * guestCount) : slotPrice;
         } else if (appliedCoupon.type === 'percentage') {
-          // Rule: Coupon only on base booking price, NOT combo
           discountAmount = baseOriginal * Number(appliedCoupon.value) / 100;
         } else if (appliedCoupon.type === 'amount') {
           discountAmount = Number(appliedCoupon.value);
         }
       }
-      let finalPrice = Math.round(Math.max(0, totalOriginal - discountAmount));
+      let finalPrice = useCredits ? 0 : Math.round(Math.max(0, totalOriginal - discountAmount));
 
       const slotDisplay = formatSlotsDisplay(selectedSlots);
       const dateObj = new Date(selectedDate + 'T00:00:00');
@@ -278,7 +308,6 @@ const BookingPage = () => {
         weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
       });
 
-      // Save booking with status: 'pending' (admin confirms later)
       const bookingRef = await addDoc(collection(db, 'bookings'), {
         customer_id: customer.id,
         customer_name: customer.name,
@@ -295,9 +324,37 @@ const BookingPage = () => {
         discount_amount: discountAmount,
         is_member: isMember,
         status: 'pending',
+        is_credit_booking: useCredits,
         terms_accepted: termsAccepted,
         created_at: serverTimestamp(),
       });
+
+      // 🆕 Deduct Credits if used
+      if (useCredits && activeMembership) {
+        const count = selectedSlots.length;
+        const legacyName = SCREEN_MAP[selectedScreen];
+        
+        if (activeMembership.credit_type === 'any') {
+           const current = activeMembership.credits_remaining?.total_hours || 0;
+           await updateDoc(doc(db, 'customer_memberships', activeMembership.id), {
+             'credits_remaining.total_hours': Math.max(0, current - count)
+           });
+        } else {
+           // Try dynamic name first, then legacy
+           let screenKey = selectedScreen;
+           let current = activeMembership.credits_remaining?.per_screen?.[selectedScreen];
+           
+           if ((current === undefined || current === null) && legacyName) {
+             screenKey = legacyName;
+             current = activeMembership.credits_remaining?.per_screen?.[legacyName];
+           }
+           
+           current = current || 0;
+           await updateDoc(doc(db, 'customer_memberships', activeMembership.id), {
+             [`credits_remaining.per_screen.${screenKey}`]: Math.max(0, current - count)
+           });
+        }
+      }
 
       if (appliedCoupon) {
         import('firebase/firestore').then(({ updateDoc, doc, increment }) => {
@@ -338,6 +395,14 @@ const BookingPage = () => {
         slotDisplay,
         guests: guestCount,
         price: finalPrice,
+        comboName: selectedCombo ? selectedCombo.name : null,
+        comboPrice: selectedCombo ? selectedCombo.price : 0,
+        extraSlotsInfo: (selectedSlots.length > (selectedCombo?.number_of_slots || 0)) 
+          ? [...selectedSlots].sort((a,b)=>a-b).slice((selectedCombo?.number_of_slots || 0)).map(h => ({
+              label: getSlotLabel(h).split(' - ')[0],
+              price: (currentScreenPricing.pricing_type === 'per_person' ? (slotPrice * guestCount) : slotPrice)
+            }))
+          : []
       });
 
       setStep(3);
@@ -384,14 +449,17 @@ Please let me know how I can confirm this booking. Thanks!`;
     window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
-  const currentScreenPricing = pricingMap[selectedScreen] || pricingMap['Screen 1'];
-  const slotPrice = currentScreenPricing[membershipType] || currentScreenPricing.non_member;
+  const currentScreenPricing = pricingMap[selectedScreen] || Object.values(pricingMap)[0] || { gold: 299, silver: 399, non_member: 499, type: 'private', pricing_type: 'group' };
+  const slotPrice = currentScreenPricing[membershipType] || currentScreenPricing.non_member || 499;
   
-  let baseBookingPrice = slotPrice * selectedSlots.length;
+  const includedSlotsDisp = selectedCombo ? Number(selectedCombo.number_of_slots || 0) : 0;
+  const extraSlotsDisp = Math.max(0, selectedSlots.length - includedSlotsDisp);
+  let baseBookingPrice = slotPrice * extraSlotsDisp;
+  
   if (currentScreenPricing.pricing_type === 'per_person') {
     baseBookingPrice = baseBookingPrice * guestCount;
   }
-
+  
   const comboPrice = selectedCombo ? Number(selectedCombo.price) : 0;
   const totalOriginal = baseBookingPrice + comboPrice;
 
@@ -532,22 +600,24 @@ Please let me know how I can confirm this booking. Thanks!`;
             </div>
 
             {/* Screen Selector */}
-            <div className="glass-card p-6">
+            <div className="glass-card p-4 sm:p-6">
               <div className="flex items-center gap-3 mb-4">
                 <Users size={16} className="text-accent" />
                 <h3 className="text-sm uppercase tracking-widest font-black text-white/60">Select Screen</h3>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="flex overflow-x-auto gap-2 pb-2 no-scrollbar scroll-smooth">
                 {screens.map(screen => {
                   const isLocked = selectedCombo && selectedCombo.screen_type !== 'All' && selectedCombo.screen_type !== screen;
                   return (
                     <button key={screen} 
                       disabled={isLocked}
                       onClick={() => { if(!isLocked) { setSelectedScreen(screen); setSelectedSlots([]); } }}
-                      className={`py-4 px-2 rounded-xl border text-center transition-all ${selectedScreen === screen ? 'bg-accent border-accent text-primary font-black shadow-[0_0_20px_rgba(212,169,95,0.4)]' : isLocked ? 'opacity-40 bg-black/40 border-white/5 cursor-not-allowed grayscale' : 'bg-white/5 border-white/10 hover:border-accent/40 font-bold'}`}
+                      className={`py-4 px-6 rounded-xl border text-center transition-all whitespace-nowrap text-[10px] uppercase font-black tracking-widest
+                        ${selectedScreen === screen ? 'bg-accent border-accent text-primary shadow-[0_0_20px_rgba(212,169,95,0.4)]' : isLocked ? 'opacity-40 bg-black/40 border-white/5 cursor-not-allowed grayscale' : 'bg-white/5 border-white/10 hover:border-accent/40 text-white/40'}
+                      `}
                     >
                       {screen}
-                      {isLocked && <p className="text-[7px] mt-1 text-white/40 uppercase font-black tracking-tighter">Locked for Combo</p>}
+                      {isLocked && <p className="text-[7px] mt-1 text-white/20 uppercase font-black tracking-tighter">Locked</p>}
                     </button>
                   );
                 })}
@@ -585,9 +655,9 @@ Please let me know how I can confirm this booking. Thanks!`;
               </div>
             )}
 
-            <div className="grid md:grid-cols-3 gap-8">
+            <div className="flex flex-col lg:grid lg:grid-cols-3 gap-6 lg:gap-8">
               {/* Slot Grid */}
-              <div className="md:col-span-2">
+              <div className="lg:col-span-2 order-2 lg:order-1">
                 <div className="flex items-center gap-3 mb-4">
                   <Clock size={16} className="text-accent" />
                   <h3 className="text-sm uppercase tracking-widest font-black text-white/60">Select Slots</h3>
@@ -599,31 +669,31 @@ Please let me know how I can confirm this booking. Thanks!`;
                     <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }} className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full" />
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 xs:grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
                     {SLOT_HOURS.map(hour => {
                       const status = slotStatus[hour];
                       const isSelected = selectedSlots.includes(hour);
                       const isAvail = status === 'available';
                       return (
                         <button key={hour} onClick={() => toggleSlot(hour)} disabled={!isAvail}
-                          className={`p-4 rounded-2xl border text-left transition-all relative
+                          className={`p-3 sm:p-4 rounded-2xl border text-left transition-all relative
                             ${isSelected ? 'bg-accent border-accent' : ''}
                             ${isAvail && !isSelected ? 'bg-white/5 border-white/10 hover:border-accent/40 hover:bg-accent/10' : ''}
                             ${!isAvail ? 'opacity-50 cursor-not-allowed bg-white/[0.02] border-white/5' : ''}
                           `}
                         >
-                          <div className={`text-sm font-bold font-heading ${isSelected ? 'text-primary' : isAvail ? 'text-white' : 'text-white/30'}`}>
+                          <div className={`text-xs sm:text-sm font-bold font-heading ${isSelected ? 'text-primary' : isAvail ? 'text-white' : 'text-white/30'}`}>
                             {getSlotLabel(hour).split(' - ')[0]}
                           </div>
-                          <div className={`text-[9px] mt-1 ${isSelected ? 'text-primary/70' : 'text-white/30'}`}>
+                          <div className={`text-[8px] sm:text-[9px] mt-0.5 sm:mt-1 ${isSelected ? 'text-primary/70' : 'text-white/30'}`}>
                             to {getSlotLabel(hour).split(' - ')[1]}
                           </div>
                           {!isAvail && (
-                            <span className={`absolute top-2 right-2 text-[8px] uppercase font-black px-2 py-0.5 rounded-full ${status === 'booked' ? 'bg-red-500/20 text-red-400' : 'bg-gray-500/20 text-gray-400'}`}>
+                            <span className={`absolute top-1 sm:top-2 right-1 sm:right-2 text-[7px] sm:text-[8px] uppercase font-black px-1.5 py-0.5 rounded-full ${status === 'booked' ? 'bg-red-500/20 text-red-400' : 'bg-gray-500/20 text-gray-400'}`}>
                               {status === 'booked' ? 'Booked' : 'Closed'}
                             </span>
                           )}
-                          {isSelected && <CheckCircle2 size={14} className="absolute top-2 right-2 text-primary" />}
+                          {isSelected && <CheckCircle2 size={12} className="absolute top-1 sm:top-2 right-1 sm:right-2 text-primary" />}
                         </button>
                       );
                     })}
@@ -638,11 +708,129 @@ Please let me know how I can confirm this booking. Thanks!`;
               </div>
 
               {/* Summary */}
-              <div className="space-y-4">
-                <div className="glass-card p-6 space-y-6">
+              <div className="space-y-4 order-1 lg:order-2">
+                <div className="glass-card p-5 sm:p-6 space-y-6">
                   <h4 className="text-sm uppercase tracking-widest font-black text-white/40">Summary</h4>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  {/* Membership Credits Toggle */}
+                  {activeMembership && (
+                    <div className={`navy-card p-5 border-accent/20 bg-accent/5 backdrop-blur-xl transition-all ${useCredits ? 'ring-2 ring-accent' : ''}`}>
+                      <div className="flex items-center justify-between mb-4">
+                         <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-accent/10 flex items-center justify-center">
+                               <Star className="text-accent" size={16} />
+                            </div>
+                            <div>
+                               <p className="text-[8px] uppercase tracking-widest text-white/40 font-black leading-none mb-1">Elite Benefit</p>
+                               <h3 className="text-xs font-heading gold-text-gradient font-black">Apply Credits</h3>
+                            </div>
+                         </div>
+                         {(() => {
+                            const getAvail = () => {
+                              if (!activeMembership || !activeMembership.credits_remaining) return 0;
+                              const credits = activeMembership.credits_remaining;
+                              
+                              // New screens data from pricingMap
+                              const screenData = pricingMap[selectedScreen];
+                              const legacyLink = screenData?.legacy_link;
+
+                              // 1. Try type-based match (ANY)
+                              if (activeMembership.credit_type === 'any') return Number(credits.total_hours || 0);
+                              
+                              // 2. Try the Explicit Legacy Link (BEST WAY)
+                              if (legacyLink && legacyLink !== 'None' && credits.per_screen?.[legacyLink] !== undefined) {
+                                return Number(credits.per_screen[legacyLink]);
+                              }
+
+                              // 3. Try direct screen name match
+                              if (credits.per_screen?.[selectedScreen] !== undefined) return Number(credits.per_screen[selectedScreen]);
+                              
+                              // 4. Try legacy mapping fallback (In case Admin forgot to link)
+                              const autoMap = { 'Screen 1': 'Mini Lounge', 'Screen 2': 'Studio Lounge', 'TV Screen': 'Grand Lounge' };
+                              const legacyName = autoMap[selectedScreen];
+                              if (legacyName && credits.per_screen?.[legacyName] !== undefined) return Number(credits.per_screen[legacyName]);
+
+                              // 5. Universal Search
+                              const allScreenQualifiers = Object.values(credits.per_screen || {});
+                              const totalPerScreen = allScreenQualifiers.reduce((sum, v) => sum + Number(v || 0), 0);
+                              return Math.max(Number(credits.total_hours || 0), totalPerScreen);
+                            };
+
+                            const avail = getAvail();
+                            const canToggle = !!activeMembership;
+                            
+                            return (
+                              <button 
+                                disabled={!canToggle}
+                                onClick={() => setUseCredits(!useCredits)}
+                                className={`w-12 h-6 rounded-full transition-all relative ${useCredits ? 'bg-accent' : 'bg-white/10'} ${!canToggle ? 'opacity-30 grayscale cursor-not-allowed' : 'active:scale-95'}`}
+                              >
+                                 <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${useCredits ? 'left-7' : 'left-1'}`} />
+                              </button>
+                            );
+                         })()}
+                      </div>
+
+                      <div className="grid grid-cols-2 pt-3 border-t border-white/10">
+                         <div>
+                            <p className="text-[8px] uppercase tracking-widest text-white/20 font-bold mb-0.5">Available</p>
+                            <p className="text-sm font-black text-white">
+                               {(() => {
+                                  if (!activeMembership || !activeMembership.credits_remaining) return '0';
+                                  const credits = activeMembership.credits_remaining;
+                                  const screenData = pricingMap[selectedScreen];
+                                  const legacyLink = screenData?.legacy_link;
+
+                                  let val = activeMembership.credit_type === 'any' ? credits.total_hours : credits.per_screen?.[selectedScreen];
+                                  
+                                  // Priority check legacy link
+                                  if (legacyLink && legacyLink !== 'None' && credits.per_screen?.[legacyLink] !== undefined) {
+                                      val = credits.per_screen[legacyLink];
+                                  } else if (!val) {
+                                     const autoMap = { 'Screen 1': 'Mini Lounge', 'Screen 2': 'Studio Lounge', 'TV Screen': 'Grand Lounge' };
+                                     val = credits.per_screen?.[autoMap[selectedScreen]];
+                                  }
+                                  
+                                  if (!val || Number(val) === 0) {
+                                     const allVals = Object.values(credits.per_screen || {});
+                                     val = Math.max(Number(credits.total_hours || 0), ...allVals.map(v => Number(v || 0)), 0);
+                                  }
+                                  
+                                  return Number(val || 0);
+                               })()} Hrs
+                            </p>
+                         </div>
+                         <div className="text-right">
+                            <p className="text-[8px] uppercase tracking-widest text-white/20 font-bold mb-0.5">To Deduct</p>
+                            <p className={`text-sm font-black ${useCredits ? 'text-accent' : 'text-white/20'}`}>{selectedSlots.length} Hrs</p>
+                         </div>
+                      </div>
+                      
+                      {selectedSlots.length > 0 && (() => {
+                         const getAvail = () => {
+                            if (!activeMembership || !activeMembership.credits_remaining) return 0;
+                            const credits = activeMembership.credits_remaining;
+                            const legacyMap = { 'Screen 1': 'Mini Lounge', 'Screen 2': 'Studio Lounge', 'TV Screen': 'Grand Lounge' };
+                            const legacyName = legacyMap[selectedScreen];
+                            let val = activeMembership.credit_type === 'any' ? credits.total_hours : credits.per_screen?.[selectedScreen];
+                            if ((val === undefined || val === null) && legacyName) val = credits.per_screen?.[legacyName];
+                            
+                            if (!val || Number(val) === 0) {
+                               const allVals = Object.values(credits.per_screen || {});
+                               val = Math.max(Number(credits.total_hours || 0), ...allVals.map(v => Number(v || 0)), 0);
+                            }
+                            return Number(val || 0);
+                         };
+                         const avail = getAvail();
+                         if (avail < selectedSlots.length && useCredits) return (
+                           <p className="text-[7px] text-red-400 uppercase font-black mt-2 leading-tight">⚠ Low credit balance: {avail} available</p>
+                         );
+                         return null;
+                      })()}
+                    </div>
+                  )}
+
+            <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <p className="text-[9px] uppercase tracking-widest text-white/30">Date</p>
                       <p className="text-sm font-medium">{new Date(selectedDate + 'T00:00:00').toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
@@ -678,16 +866,22 @@ Please let me know how I can confirm this booking. Thanks!`;
                   </div>
 
                   <div className="pt-4 border-t border-white/5">
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-[10px] uppercase tracking-widest text-white/30">Price/slot</span>
-                      <span className="text-sm">₹{slotPrice}</span>
-                    </div>
-                    
                     {selectedCombo && (
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-[10px] uppercase tracking-widest text-white/30">Combo ({selectedCombo.name})</span>
-                        <span className="text-sm">₹{selectedCombo.price}</span>
+                        <span className="text-sm font-bold">₹{selectedCombo.price}</span>
                       </div>
+                    )}
+
+                    {!selectedCombo && selectedSlots.length > 0 && (
+                      [...selectedSlots].sort((a,b)=>a-b).map((h, i) => (
+                        <div key={h} className="flex justify-between items-center mb-1">
+                          <span className="text-[10px] uppercase tracking-widest text-white/30">
+                            Slot {i + 1} ({getSlotLabel(h).split(' - ')[0]})
+                          </span>
+                          <span className="text-sm">₹{currentScreenPricing.pricing_type === 'per_person' ? (slotPrice * guestCount) : slotPrice}</span>
+                        </div>
+                      ))
                     )}
                     
                     <div className="mt-4 mb-4">
@@ -711,10 +905,12 @@ Please let me know how I can confirm this booking. Thanks!`;
                       {appliedCoupon && <p className="text-green-400 text-[10px] mt-2 ml-1 flex items-center gap-1"><CheckCircle2 size={10} /> Coupon "{appliedCoupon.code}" applied!</p>}
                     </div>
 
-                    <div className="flex justify-between items-center mt-2">
-                      <span className="text-[10px] uppercase tracking-widest text-white/30">Original Total</span>
-                      <span className="text-sm font-bold">₹{totalOriginal}</span>
-                    </div>
+                    {appliedCoupon && (
+                      <div className="flex justify-between items-center mt-2">
+                        <span className="text-[10px] uppercase tracking-widest text-white/30">Original Total</span>
+                        <span className="text-sm font-bold">₹{totalOriginal}</span>
+                      </div>
+                    )}
                     {appliedCoupon && (
                       <div className="flex justify-between items-center text-green-400 mt-1">
                         <span className="text-[10px] uppercase tracking-widest">Coupon Discount</span>
@@ -786,8 +982,25 @@ Please let me know how I can confirm this booking. Thanks!`;
                   <p className="text-[9px] uppercase tracking-widest text-white/30 font-black mb-1">Slots</p>
                   <p className="text-sm text-accent font-medium">{confirmedBooking.slotDisplay}</p>
                 </div>
+                {confirmedBooking.comboName && (
+                  <div>
+                    <p className="text-[9px] uppercase tracking-widest text-white/30 font-black mb-1">Combo</p>
+                    <p className="text-sm font-medium text-accent">{confirmedBooking.comboName} (₹{confirmedBooking.comboPrice})</p>
+                  </div>
+                )}
+                {confirmedBooking.extraSlotsInfo && confirmedBooking.extraSlotsInfo.length > 0 && (
+                  <div className="col-span-2 space-y-1">
+                    <p className="text-[9px] uppercase tracking-widest text-white/30 font-black mb-1">Slot Charges</p>
+                    {confirmedBooking.extraSlotsInfo.map((info, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-xs text-white/70">
+                        <span>Slot {idx + 1} ({info.label})</span>
+                        <span>₹{info.price}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div>
-                  <p className="text-[9px] uppercase tracking-widest text-white/30 font-black mb-1">Amount</p>
+                  <p className="text-[9px] uppercase tracking-widest text-white/30 font-black mb-1">Total Amount</p>
                   <p className="text-xl font-heading font-black gold-text-gradient">₹{confirmedBooking.price}</p>
                 </div>
               </div>

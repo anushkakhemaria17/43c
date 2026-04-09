@@ -14,6 +14,8 @@ import ContactPage from './pages/ContactPage';
 import AdminVerify from './pages/AdminVerify';
 import TermsPage from './pages/TermsPage';
 import CombosPage from './pages/CombosPage';
+import CustomerGuide from './pages/CustomerGuide';
+import AdminGuide from './pages/AdminGuide';
 
 function App() {
   return (
@@ -34,6 +36,8 @@ function App() {
             <Route path="/admin-login" element={<AdminLogin />} />
             <Route path="/admin/verify/:id" element={<AdminVerify />} />
             <Route path="/admin/*" element={<AdminDashboard />} />
+            <Route path="/guide" element={<CustomerGuide />} />
+            <Route path="/admin-guide" element={<AdminGuide />} />
           </Routes>
         </div>
       </Router>

@@ -14,12 +14,14 @@ import { getWhatsAppNumber } from '../utils/settings';
 import { createNotification } from '../utils/firebaseHelpers';
 
 const MenuPage = () => {
-  const { customer } = useAuth();
+  const { customer, loading: authLoading } = useAuth();
   const [menuItems, setMenuItems] = useState([]);
+  const [foodCombos, setFoodCombos] = useState([]);
   const [categories, setCategories] = useState([]);
   const [selectedCat, setSelectedCat] = useState('All');
   const [cart, setCart] = useState({});
   const [isMember, setIsMember] = useState(false);
+  const [membershipType, setMembershipType] = useState('non-member');
   const [loading, setLoading] = useState(true);
   const [showCart, setShowCart] = useState(false);
   const [orders, setOrders] = useState([]);
@@ -51,21 +53,34 @@ const MenuPage = () => {
   const checkMembership = async () => {
     try {
       const q = query(
-        collection(db, 'memberships'),
+        collection(db, 'customer_memberships'),
         where('customer_id', '==', customer.id),
         where('status', '==', 'active')
       );
       const snap = await getDocs(q);
-      setIsMember(!snap.empty);
+      const active = !snap.empty;
+      setIsMember(active);
+      if (active) {
+          setMembershipType(snap.docs[0].data().membership_type || 'silver');
+      } else {
+          setMembershipType('non-member');
+      }
     } catch (err) { console.error(err); }
   };
 
   const fetchMenu = async () => {
     try {
-      const snap = await getDocs(collection(db, 'menu_items'));
-      const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const [mSnap, cSnap] = await Promise.all([
+        getDocs(collection(db, 'menu_items')),
+        getDocs(collection(db, 'food_combos'))
+      ]);
+      const items = mSnap.docs.map(d => ({ id: d.id, ...d.data(), type: 'item' }));
+      const combos = cSnap.docs.map(d => ({ id: d.id, ...d.data(), type: 'combo', category: 'Combos' }));
+      
       setMenuItems(items);
-      const cats = ['All', ...new Set(items.map(i => i.category).filter(Boolean))];
+      setFoodCombos(combos);
+      const allItems = [...items, ...combos];
+      const cats = ['All', 'Combos', ...new Set(items.map(i => i.category).filter(Boolean))];
       setCategories(cats);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
@@ -83,10 +98,15 @@ const MenuPage = () => {
       return n;
     });
 
-  const getBasePrice = (item) => isMember ? item.member_price : item.non_member_price;
+  const getBasePrice = (item) => {
+    if (item.type === 'combo') return item.price;
+    if (membershipType === 'gold') return item.gold_price || item.silver_price || item.member_price || item.non_member_price || 0;
+    if (membershipType === 'silver') return item.silver_price || item.member_price || item.non_member_price || 0;
+    return item.non_member_price || 0;
+  };
   const getPrice = (item) => {
     const base = getBasePrice(item);
-    if (item.discount > 0) return Math.round(base - (base * item.discount / 100));
+    if (item.type === 'item' && item.discount > 0) return Math.round(base - (base * item.discount / 100));
     return base;
   };
 
@@ -97,14 +117,23 @@ const MenuPage = () => {
     Object.values(cart).reduce((sum, item) => sum + item.qty, 0);
 
   const getFinalTotal = () => {
-    let total = getCartTotal();
-    if (!appliedCoupon) return total;
+    let subtotal = getCartTotal();
+    if (!appliedCoupon) return subtotal;
+
+    // Calculate total of items eligible for discount (excluding combos)
+    const eligibleTotal = Object.values(cart)
+      .filter(i => i.type === 'item')
+      .reduce((sum, item) => sum + getPrice(item) * item.qty, 0);
+
     if (appliedCoupon.type === 'percentage') {
-      return Math.max(0, total - (total * appliedCoupon.value / 100));
+      const discount = Math.round(eligibleTotal * (appliedCoupon.value / 100));
+      return Math.max(0, subtotal - discount);
     } else if (appliedCoupon.type === 'amount') {
-      return Math.max(0, total - appliedCoupon.value);
+      // Amount coupons typically apply to the whole cart unless specified otherwise
+      // But we will apply it to the whole total for simplicity while keeping the subtotal logic clear
+      return Math.max(0, subtotal - (appliedCoupon.value || 0));
     }
-    return total;
+    return subtotal;
   };
 
   const handleApplyCoupon = async () => {
@@ -152,9 +181,14 @@ const MenuPage = () => {
     if (!customer) return alert('Log in to place orders');
     setLoading(true);
     try {
-      const itemsToOrder = Object.values(cart).map(i => ({
-        id: i.id, name: i.name, qty: i.qty, price: getPrice(i),
-      }));
+      const itemsToOrder = Object.values(cart).map(i => {
+        const base = { id: i.id, name: i.name, qty: i.qty, price: getPrice(i), type: i.type || 'item' };
+        // Save sub-items so admin can see combo breakdown
+        if (i.type === 'combo' && i.items && i.items.length > 0) {
+          base.items = i.items.map(sub => ({ id: sub.id, name: sub.name, qty: sub.qty || 1 }));
+        }
+        return base;
+      });
       const originalTotal = getCartTotal();
       const finalTotal = Math.round(getFinalTotal());
 
@@ -179,20 +213,28 @@ const MenuPage = () => {
       }
 
       // Notify admin
+      const itemsSummary = itemsToOrder.map(i => {
+        if (i.type === 'combo' && i.items) {
+          const breakdown = i.items.map(sub => `${(sub.qty || 1) * i.qty}x ${sub.name}`).join(', ');
+          return `${i.qty}x ${i.name} (${breakdown})`;
+        }
+        return `${i.qty}x ${i.name}`;
+      }).join(', ');
+
       await createNotification({
         userId: null,
         type: 'new_food_order',
-        message: `🍽️ New order from ${customer.name} (${customer.mobile_number}) — ₹${total}. Items: ${itemsToOrder.map(i => `${i.qty}x ${i.name}`).join(', ')}`,
+        message: `🍽️ New order from ${customer.name} (${customer.mobile_number}) — ₹${finalTotal}. Items: ${itemsSummary}`,
         orderId: docRef.id,
         notifyAdmin: true,
-        adminMessage: `🍽️ New Order from ${customer.name} · ₹${total}`,
+        adminMessage: `🍽️ New Order from ${customer.name} · ₹${finalTotal}`,
       });
 
       // Notify customer
       await createNotification({
         userId: customer.id,
         type: 'order_placed',
-        message: `Your food order has been placed! Total ₹${total}. Awaiting admin confirmation.`,
+        message: `Your food order has been placed! Total ₹${finalTotal}. Awaiting admin confirmation.`,
         orderId: docRef.id,
       });
 
@@ -204,7 +246,13 @@ const MenuPage = () => {
       setShowConfirm(true);
 
       const waNumber = await getWhatsAppNumber();
-      const itemsList = itemsToOrder.map(i => `- ${i.name} (x${i.qty})`).join('\n');
+      const itemsList = itemsToOrder.map(i => {
+        if (i.type === 'combo' && i.items) {
+          const breakdown = i.items.map(sub => `- ${(sub.qty || 1) * i.qty}x ${sub.name}`).join('\n  ');
+          return `- ${i.name} (x${i.qty})\n  ${breakdown}`;
+        }
+        return `- ${i.name} (x${i.qty})`;
+      }).join('\n');
       const discountText = appliedCoupon ? `\nDiscount: ₹${originalTotal - finalTotal}\nCoupon: ${appliedCoupon.code}` : '';
       const msg = `I want to place a food order:\n${itemsList}\nOriginal Total: ₹${originalTotal}${discountText}\nFinal Total: ₹${finalTotal}`;
       window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`, '_blank');
@@ -212,6 +260,13 @@ const MenuPage = () => {
       alert('Failed: ' + err.message);
     } finally { setLoading(false); }
   };
+
+  // Show spinner while auth is resolving to avoid premature login wall
+  if (authLoading) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }} className="w-10 h-10 border-2 border-accent border-t-transparent rounded-full" />
+    </div>
+  );
 
   if (!customer) return (
     <div className="min-h-screen flex flex-col items-center justify-center pt-24 space-y-6">
@@ -224,7 +279,11 @@ const MenuPage = () => {
     </div>
   );
 
-  const filteredItems = selectedCat === 'All' ? menuItems : menuItems.filter(i => i.category === selectedCat);
+  const filteredItems = selectedCat === 'All' 
+    ? [...foodCombos, ...menuItems] 
+    : selectedCat === 'Combos' 
+      ? foodCombos 
+      : menuItems.filter(i => i.category === selectedCat);
 
   // Group items by category for "All" view
   const grouped = {};
@@ -247,8 +306,8 @@ const MenuPage = () => {
 
       {/* ── Header ── */}
       <div className="text-center mb-10">
-        <span className="text-[10px] uppercase tracking-[0.4em] text-accent font-black mb-4 block">43C · Café Lounge</span>
-        <h1 className="text-5xl md:text-6xl font-heading mb-2 gold-text-gradient">Culinary Collection</h1>
+        <span className="text-[10px] uppercase tracking-[0.4em] text-accent font-black mb-3 block">43C · Café Lounge</span>
+        <h1 className="text-4xl md:text-6xl font-heading mb-2 gold-text-gradient leading-tight">Culinary Collection</h1>
         <div className="flex items-center justify-center gap-3 mt-3">
           <div className="h-px flex-1 max-w-[100px] bg-gradient-to-r from-transparent to-accent/40"></div>
           <span className="text-accent/60">❖</span>
@@ -284,10 +343,10 @@ const MenuPage = () => {
       )}
 
       {/* ── Category Tabs ── */}
-      <div className="flex flex-col md:flex-row md:flex-wrap gap-3 pb-4 mb-8">
+      <div className="flex flex-row overflow-x-auto gap-2 md:gap-3 pb-4 mb-4 md:mb-8 scrollbar-hide scroll-smooth -mx-4 px-4 md:mx-0 md:px-0">
         {categories.map(c => (
           <button key={c} onClick={() => setSelectedCat(c)}
-            className={`px-5 py-3 md:py-2.5 rounded-xl border whitespace-nowrap text-sm md:text-xs font-bold transition-all min-h-[44px] text-left md:text-center ${selectedCat === c ? 'bg-accent border-accent text-primary' : 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:border-white/30'}`}
+            className={`px-5 py-2.5 rounded-xl border whitespace-nowrap text-[11px] md:text-xs font-black uppercase tracking-widest transition-all min-h-[40px] ${selectedCat === c ? 'bg-accent border-accent text-primary shadow-[0_0_15px_rgba(212,169,95,0.3)]' : 'bg-white/5 border-white/10 text-white/40 hover:text-white hover:border-white/30'}`}
           >{c}</button>
         ))}
       </div>
@@ -302,31 +361,32 @@ const MenuPage = () => {
           {Object.entries(grouped).map(([cat, items]) => (
             <div key={cat}>
               {/* Category divider – luxury menu style */}
-              <div className="text-center mb-6">
-                <div className="flex items-center gap-4">
+              <div className="text-center mb-6 md:mb-8">
+                <div className="flex items-center gap-2 md:gap-4 font-heading">
                   <div className="h-px flex-1 bg-gradient-to-r from-transparent via-accent/30 to-transparent"></div>
-                  <div className="px-5 py-1.5 border border-accent/30 rounded-full bg-accent/5">
-                    <span className="text-accent font-heading font-bold text-xs uppercase tracking-[0.2em]">
-                      ❖ {cat} ❖
+                  <div className="px-4 md:px-6 py-1 md:py-2 border border-accent/20 rounded-full bg-accent/5">
+                    <span className="text-accent font-black text-[10px] md:text-xs uppercase tracking-[0.2em]">
+                      {cat}
                     </span>
                   </div>
                   <div className="h-px flex-1 bg-gradient-to-r from-transparent via-accent/30 to-transparent"></div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6">
+              <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6">
                 {items.map(item => {
                   const price = getPrice(item);
                   const inCart = cart[item.id]?.qty || 0;
                   return (
                     <motion.div
                       key={item.id}
-                      initial={{ opacity: 0, y: 16 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="glass-card overflow-hidden group hover:border-accent/40 transition-all duration-300 flex flex-col"
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      whileInView={{ opacity: 1, scale: 1 }}
+                      viewport={{ once: true }}
+                      className="glass-card overflow-hidden group hover:border-accent/40 transition-all duration-300 flex flex-col sm:flex-row md:flex-col"
                     >
                       {/* Image area */}
-                      <div className="aspect-video bg-gradient-to-br from-[#0B0F3A] to-[#05071A] relative overflow-hidden flex items-center justify-center">
+                      <div className="w-full sm:w-1/3 md:w-full aspect-[4/3] sm:aspect-square md:aspect-video bg-gradient-to-br from-[#0B0F3A] to-[#05071A] relative overflow-hidden flex items-center justify-center">
                         {item.image_url ? (
                           <img
                             src={getLocalAsset(item.image_url, 'menu')}
@@ -335,44 +395,60 @@ const MenuPage = () => {
                           />
                         ) : (
                           <div className="flex flex-col items-center gap-2">
-                            <UtensilsCrossed size={32} className="text-white/10" />
+                            {item.type === 'combo' ? <ShoppingBag size={32} className="text-white/10" /> : <UtensilsCrossed size={32} className="text-white/10" />}
                             <span className="text-[9px] uppercase tracking-widest text-white/20">{cat}</span>
                           </div>
                         )}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent pointer-events-none"></div>
-                        {item.discount > 0 && (
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none"></div>
+                        {item.type === 'combo' && (
+                          <div className="absolute top-2 right-2 bg-accent text-primary text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-lg">
+                            Combo
+                          </div>
+                        )}
+                        {item.type === 'item' && item.discount > 0 && (
                           <div className="absolute top-2 left-2 bg-red-500 text-white text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded shadow-lg">
-                            {item.discount}% OFF
+                            {item.discount}%
                           </div>
                         )}
                       </div>
-
+ 
                       {/* Content */}
-                      <div className="p-5 flex flex-col flex-1">
-                        <h3 className="font-heading text-lg mb-2 leading-tight text-white">{item.name}</h3>
-                        <div className="flex justify-between items-center mt-auto pt-3 border-t border-white/10">
+                      <div className="p-4 md:p-5 flex flex-col flex-1">
+                        <div className="flex-1">
+                           <h3 className="font-heading text-base md:text-lg mb-1 leading-tight text-white">{item.name}</h3>
+                           {item.type === 'combo' && (
+                             <div className="mb-3 space-y-0.5">
+                               {item.items?.map((sub, idx) => (
+                                 <p key={idx} className="text-[10px] text-white/40 font-medium italic line-clamp-1">· {sub.qty || 1}x {sub.name}</p>
+                               ))}
+                             </div>
+                           )}
+                        </div>
+                        <div className="flex justify-between items-center mt-3 pt-3 border-t border-white/10">
                           <div>
-                            <p className={`text-xl font-bold font-heading ${isMember ? 'text-accent' : 'text-white'}`}>₹{price}</p>
-                            {/* Show original if discounted or if member gets a discount from base price */}
+                            <p className={`text-lg md:text-xl font-bold font-heading ${isMember ? 'text-accent' : 'text-white'}`}>₹{price}</p>
                             {(item.discount > 0 || (isMember && item.non_member_price && item.non_member_price !== item.member_price)) && (
                               <p className="text-[9px] text-white/30 line-through">₹{item.non_member_price}</p>
                             )}
                           </div>
-                          {inCart > 0 ? (
-                            <div className="flex items-center gap-3 bg-white/10 rounded-xl p-1 border border-white/20">
-                              <button onClick={() => removeFromCart(item.id)} className="w-11 h-11 md:w-9 md:h-9 flex items-center justify-center rounded-lg bg-black/20 text-white hover:bg-black/40 transition-colors">
-                                <Minus size={16} />
+                          <div className="flex items-center gap-2">
+                            {inCart > 0 && (
+                              <div className="flex items-center gap-2 bg-white/5 rounded-lg p-0.5 border border-white/10">
+                                <button onClick={() => removeFromCart(item.id)} className="w-8 h-8 flex items-center justify-center rounded-md bg-black/20 text-white hover:bg-black/40 transition-colors">
+                                  <Minus size={14} />
+                                </button>
+                                <span className="w-4 text-center text-xs font-bold">{inCart}</span>
+                                <button onClick={() => addToCart(item)} className="w-8 h-8 flex items-center justify-center rounded-md bg-accent text-primary hover:bg-accent/80 transition-colors">
+                                  <Plus size={14} />
+                                </button>
+                              </div>
+                            )}
+                            {inCart === 0 && (
+                              <button onClick={() => addToCart(item)} className="w-10 h-10 flex items-center justify-center rounded-lg bg-white/5 border border-white/10 hover:bg-accent hover:border-accent text-white hover:text-primary transition-all">
+                                <Plus size={18} />
                               </button>
-                              <span className="w-6 text-center font-bold text-base">{inCart}</span>
-                              <button onClick={() => addToCart(item)} className="w-11 h-11 md:w-9 md:h-9 flex items-center justify-center rounded-lg bg-accent text-primary hover:bg-accent/80 transition-colors">
-                                <Plus size={16} />
-                              </button>
-                            </div>
-                          ) : (
-                            <button onClick={() => addToCart(item)} className="w-11 h-11 md:w-9 md:h-9 flex items-center justify-center rounded-xl bg-white/5 border border-white/10 hover:bg-accent hover:border-accent text-white hover:text-primary transition-all">
-                              <Plus size={18} />
-                            </button>
-                          )}
+                            )}
+                          </div>
                         </div>
                       </div>
                     </motion.div>
@@ -446,7 +522,10 @@ const MenuPage = () => {
                   Object.values(cart).map(item => (
                     <div key={item.id} className="flex justify-between items-center border-b border-white/5 pb-4">
                       <div className="flex-1">
-                        <h4 className="font-bold text-sm mb-1">{item.name}</h4>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-sm mb-1">{item.name}</h4>
+                          {item.type === 'combo' && <span className="text-[8px] uppercase tracking-widest bg-accent/20 text-accent px-1.5 py-0.5 rounded-full border border-accent/20">Combo</span>}
+                        </div>
                         <p className="text-[10px] text-accent">₹{getPrice(item)} each</p>
                       </div>
                       <div className="flex items-center gap-3 bg-white/5 rounded-lg p-1 border border-white/10">

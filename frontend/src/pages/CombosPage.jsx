@@ -57,7 +57,7 @@ const CombosPage = () => {
                         <span className="text-[10px] uppercase tracking-[0.4em] font-black text-accent">Exclusive Experiences</span>
                         <Star size={14} className="text-accent fill-accent" />
                     </div>
-                    <h1 className="text-6xl md:text-8xl font-heading gold-text-gradient font-black tracking-tighter leading-none">
+                    <h1 className="text-4xl sm:text-5xl md:text-8xl font-heading gold-text-gradient font-black tracking-tighter leading-none">
                         Our <br /><span className="italic opacity-80">Elite</span> Combos
                     </h1>
                     <div className="w-24 h-1 bg-gradient-to-r from-transparent via-accent to-transparent mx-auto mt-8 opacity-50"></div>
@@ -65,7 +65,7 @@ const CombosPage = () => {
             </div>
 
             {/* Combos Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-10">
                 {combos.map((combo, idx) => (
                     <motion.div
                         key={combo.id}
@@ -78,7 +78,7 @@ const CombosPage = () => {
                         <div className="glass-card flex-1 flex flex-col overflow-hidden border-white/5 hover:border-accent/30 transition-all duration-700 bg-gradient-to-br from-white/[0.03] to-transparent relative group">
                             
                             {/* Image Header */}
-                            <div className="relative h-72 overflow-hidden">
+                            <div className="relative h-60 sm:h-72 overflow-hidden">
                                 {combo.image_url ? (
                                     <img
                                         src={getLocalAsset(combo.image_url, 'combos')}
@@ -110,8 +110,8 @@ const CombosPage = () => {
                             </div>
 
                             {/* Info Body */}
-                            <div className="p-8 flex-1 flex flex-col">
-                                <p className="text-white/40 text-[13px] leading-relaxed mb-8 italic line-clamp-3">
+                            <div className="p-6 sm:p-8 flex-1 flex flex-col">
+                                <p className="text-white/40 text-xs sm:text-[13px] leading-relaxed mb-6 sm:mb-8 italic line-clamp-3">
                                     "{combo.description}"
                                 </p>
 

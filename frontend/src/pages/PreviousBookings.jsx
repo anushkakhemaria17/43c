@@ -4,7 +4,7 @@ import { db } from '../lib/firebase';
 import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
 import { Calendar, UtensilsCrossed, CheckCircle2, Clock, Download, History } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { formatSlotsDisplay } from '../utils/slots';
 
 const STATUS_STYLES = {
@@ -12,6 +12,7 @@ const STATUS_STYLES = {
   confirmed: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
   completed: 'bg-green-500/10 text-green-400 border-green-500/30',
   served:    'bg-green-500/10 text-green-400 border-green-500/30',
+  cancelled: 'bg-red-500/10 text-red-400 border-red-500/20',
 };
 
 const STATUS_LABELS = {
@@ -19,14 +20,23 @@ const STATUS_LABELS = {
   confirmed: '✓ Confirmed',
   completed: '✓ Completed',
   served:    '✓ Served',
+  cancelled: '✕ Cancelled',
 };
 
 const PreviousBookings = () => {
   const { customer, logout } = useAuth();
+  const location = useLocation();
   const [bookings, setBookings] = useState([]);
   const [foodOrders, setFoodOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('bookings');
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tab = params.get('tab');
+    if (tab === 'orders') setActiveTab('orders');
+    else if (tab === 'bookings') setActiveTab('bookings');
+  }, [location]);
 
   useEffect(() => {
     if (!customer) { setLoading(false); return; }
@@ -87,7 +97,7 @@ const PreviousBookings = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-3 mb-10 overflow-x-auto pb-2">
+      <div className="flex gap-2 mb-8 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
         <button onClick={() => setActiveTab('bookings')}
           className={`flex items-center gap-2 px-6 py-3 rounded-xl border text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-all ${activeTab === 'bookings' ? 'bg-accent border-accent text-primary' : 'bg-white/5 border-white/10 text-white/60 hover:border-white/30'}`}
         >
@@ -131,10 +141,10 @@ const PreviousBookings = () => {
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 pt-3 border-t border-white/5">
-                      <div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 pt-4 border-t border-white/5">
+                      <div className="col-span-2 sm:col-span-1">
                         <p className="text-[9px] uppercase tracking-widest text-white/20 font-black mb-1">Slots</p>
-                        <p className="text-sm text-accent font-medium italic">{b.screen||'Screen 1'} · {formatSlotsDisplay(b.slots)}</p>
+                        <p className="text-xs md:text-sm text-accent font-medium italic leading-relaxed">{b.screen||'Screen 1'} · {formatSlotsDisplay(b.slots)}</p>
                       </div>
                       <div>
                         <p className="text-[9px] uppercase tracking-widest text-white/20 font-black mb-1">Guests</p>

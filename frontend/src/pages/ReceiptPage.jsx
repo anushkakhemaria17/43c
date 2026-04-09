@@ -173,14 +173,7 @@ const ReceiptPage = () => {
           </div>
         </div>
 
-        <div className="mt-10 flex flex-col sm:flex-row gap-4 no-print flex-wrap">
-          <button onClick={() => window.print()} className="gold-button flex-1 flex items-center justify-center gap-4 group">
-            <Printer className="w-5 h-5 group-hover:scale-110 transition-transform" /> Print Hard Copy
-          </button>
-          <button className="flex-1 glass-card py-4 flex items-center justify-center gap-4 hover:bg-white/10 transition-colors uppercase tracking-widest text-[10px] font-bold border-white/5 cursor-not-allowed opacity-50">
-            <Download className="w-5 h-5" /> Download PDF (Soon)
-          </button>
-        </div>
+        {/* Buttons Removed */}
       </motion.div>
       <style dangerouslySetInnerHTML={{ __html: `@media print { nav, .no-print, button { display: none !important; } body { background: white !important; } #digital-pass { color: black !important; } }` }} />
     </div>
