@@ -10,6 +10,7 @@ import {
 } from '../utils/slots';
 import { getWhatsAppNumber } from '../utils/settings';
 import { createNotification } from '../utils/firebaseHelpers';
+import { openWhatsApp } from '../utils/whatsapp';
 
 const SCREEN_MAP = {
   'Screen 1': 'Mini Lounge',
@@ -423,7 +424,7 @@ const BookingPage = () => {
 
 Please let me know how I can confirm this booking. Thanks!`;
 
-      window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`, '_blank');
+      openWhatsApp(waNumber, msg);
     } catch (err) {
       console.error(err);
       alert('Booking failed: ' + err.message);
@@ -446,7 +447,7 @@ Please let me know how I can confirm this booking. Thanks!`;
 
 Please let me know how I can confirm this booking. Thanks!`;
 
-    window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`, '_blank');
+    openWhatsApp(waNumber, msg);
   };
 
   const currentScreenPricing = pricingMap[selectedScreen] || Object.values(pricingMap)[0] || { gold: 299, silver: 399, non_member: 499, type: 'private', pricing_type: 'group' };
@@ -889,17 +890,17 @@ Please let me know how I can confirm this booking. Thanks!`;
                     
                     <div className="mt-4 mb-4">
                       <p className="text-[9px] uppercase tracking-widest text-white/40 mb-2 font-black">Special Code</p>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 items-center overflow-hidden">
                         <input 
                           type="text" 
-                          placeholder="CUPON CODE" 
+                          placeholder="COUPON CODE" 
                           value={couponCode} 
                           onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                          className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm uppercase focus:border-accent outline-none transition-all"
+                          className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-xl px-3 py-3 text-sm uppercase focus:border-accent outline-none transition-all"
                         />
                         <button 
                           onClick={handleApplyCoupon} 
-                          className="px-6 bg-accent text-primary rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-accent/80 transition-all active:scale-95 whitespace-nowrap"
+                          className="px-4 shrink-0 bg-accent text-primary rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-accent/80 transition-all active:scale-95 whitespace-nowrap"
                         >
                           Apply
                         </button>

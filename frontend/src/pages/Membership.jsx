@@ -17,6 +17,7 @@ import {
   onSnapshot
 } from 'firebase/firestore';
 import { createNotification } from '../utils/firebaseHelpers';
+import { openWhatsApp } from '../utils/whatsapp';
 
 const Membership = () => {
     const { customer, updateProfile } = useAuth();
@@ -104,11 +105,9 @@ const Membership = () => {
             let cleanMobile = adminMobile.replace(/\D/g, '');
             if (!cleanMobile.startsWith('91')) cleanMobile = `91${cleanMobile}`;
             
-            const waUrl = `https://wa.me/${cleanMobile}?text=${encodeURIComponent(msg)}`;
-            
             setPendingMembership({ plan_name: plan.name, status: 'pending' });
             alert(`Your enquiry for ${plan.name} has been sent to 43C. Please complete the payment on WhatsApp.`);
-            window.open(waUrl, '_blank');
+            openWhatsApp(cleanMobile, msg);
         } catch (err) {
             console.error(err);
             alert('Enquiry failed. Please contact concierge.');

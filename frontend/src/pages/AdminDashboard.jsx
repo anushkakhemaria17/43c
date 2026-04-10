@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { SLOT_HOURS, getSlotLabel, getAvailableDates, getSlotStatusMap, formatSlotsDisplay, getTodayStr } from '../utils/slots';
 import { exportAnalyticsExcel } from '../utils/exportExcel';
 import { createNotification, autoCompleteBookings, autoCancelPendingBookings, openAdminWhatsApp, sendBookingConfirmedWhatsApp } from '../utils/firebaseHelpers';
+import { openWhatsApp } from '../utils/whatsapp';
 import AdminNotificationBell from '../components/AdminNotificationBell';
 import logo43c from '../assets/43C.png';
 
@@ -943,7 +944,7 @@ const AdminDashboard = () => {
         let cleanPhone = (membership.customer_mobile || '').replace(/\D/g, '');
         if (cleanPhone) {
           if (!cleanPhone.startsWith('91')) cleanPhone = '91' + cleanPhone;
-          window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(waMsg)}`, '_blank');
+          openWhatsApp(cleanPhone, waMsg);
         }
 
         alert('Membership approved and earnings logged. WhatsApp message opened.');
@@ -2039,7 +2040,7 @@ const AdminDashboard = () => {
 
                                   const cleanPhone = phone.replace(/\D/g, '');
                                   const fullPhone = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
-                                  window.open(`https://wa.me/${fullPhone}?text=${encodeURIComponent(finalMsg)}`, '_blank');
+                                  openWhatsApp(fullPhone, finalMsg);
                                 }} 
                                 className="p-2 bg-green-500/10 text-green-500 rounded hover:bg-green-500/20"
                                 title="Send via WhatsApp"

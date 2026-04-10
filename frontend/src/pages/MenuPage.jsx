@@ -12,6 +12,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { getWhatsAppNumber } from '../utils/settings';
 import { createNotification } from '../utils/firebaseHelpers';
+import { openWhatsApp } from '../utils/whatsapp';
 
 const MenuPage = () => {
   const { customer, loading: authLoading } = useAuth();
@@ -255,7 +256,7 @@ const MenuPage = () => {
       }).join('\n');
       const discountText = appliedCoupon ? `\nDiscount: ₹${originalTotal - finalTotal}\nCoupon: ${appliedCoupon.code}` : '';
       const msg = `I want to place a food order:\n${itemsList}\nOriginal Total: ₹${originalTotal}${discountText}\nFinal Total: ₹${finalTotal}`;
-      window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`, '_blank');
+      openWhatsApp(waNumber, msg);
     } catch (err) {
       alert('Failed: ' + err.message);
     } finally { setLoading(false); }
@@ -545,15 +546,15 @@ const MenuPage = () => {
                 <div className="p-6 border-t border-white/10 bg-[#0B0F3A] space-y-4 flex-shrink-0">
                   <div className="space-y-4">
                     <p className="text-[9px] uppercase tracking-widest text-white/40 font-black">Special Code</p>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center overflow-hidden">
                       <input 
                         type="text" 
                         placeholder="COUPON CODE" 
                         value={couponCode} 
                         onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                        className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm uppercase focus:border-accent outline-none"
+                        className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-xl px-3 py-3 text-sm uppercase focus:border-accent outline-none"
                       />
-                      <button onClick={handleApplyCoupon} className="gold-button !py-3 !px-6 text-[10px] font-black uppercase tracking-widest">Apply</button>
+                      <button onClick={handleApplyCoupon} className="gold-button !py-3 !px-4 shrink-0 text-[10px] font-black uppercase tracking-widest">Apply</button>
                     </div>
                   </div>
                   {couponError && <p className="text-red-400 text-xs">{couponError}</p>}

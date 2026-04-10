@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { MapPin, Phone, Mail, MessageCircle, Clock } from 'lucide-react';
 import { getWhatsAppNumber } from '../utils/settings';
+import { openWhatsApp } from '../utils/whatsapp';
 
 const ContactPage = () => {
   const [waNumber, setWaNumber] = useState('9479810400');
@@ -14,8 +15,9 @@ const ContactPage = () => {
 
   const handleWhatsApp = (e) => {
     e.preventDefault();
-    const message = encodeURIComponent("Hello 43C, I have a query regarding...");
-    window.open(`https://wa.me/91${waNumber}?text=${message}`, '_blank');
+    const message = "Hello 43C, I have a query regarding...";
+    const fullPhone = waNumber.startsWith('91') ? waNumber : `91${waNumber}`;
+    openWhatsApp(fullPhone, message);
   };
 
   return (

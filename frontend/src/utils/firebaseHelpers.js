@@ -2,6 +2,7 @@ import { db } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp, getDocs, updateDoc, doc } from 'firebase/firestore';
 import { getWhatsAppNumber } from './settings';
 import { formatSlotsDisplay, getSlotLabel } from './slots';
+import { openWhatsApp } from './whatsapp';
 
 // ── Notification helpers ──────────────────────────────────────────
 
@@ -114,7 +115,7 @@ export const openAdminWhatsApp = ({ customerMobile, customerName, slots, date, g
     `Please share the payment screenshot to proceed with confirmation. Thanks!`;
   const number = customerMobile.replace(/\D/g, '');
   const wa = number.startsWith('91') ? number : `91${number}`;
-  window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`, '_blank');
+  openWhatsApp(wa, msg);
 };
 
 // ── WhatsApp: notify customer on confirmation ────────────────────
@@ -133,5 +134,5 @@ export const sendBookingConfirmedWhatsApp = ({ customerMobile, customerName, slo
     `Your Entry OTP will be sent to this number 30 mins before your time slot. Have a great experience! ✨`;
   const number = customerMobile.replace(/\D/g, '');
   const wa = number.startsWith('91') ? number : `91${number}`;
-  window.open(`https://wa.me/${wa}?text=${encodeURIComponent(msg)}`, '_blank');
+  openWhatsApp(wa, msg);
 };

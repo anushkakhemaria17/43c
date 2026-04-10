@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
 import { getDocs, collection } from 'firebase/firestore';
 import { getWhatsAppNumber } from '../utils/settings';
+import { openWhatsApp } from '../utils/whatsapp';
 
 const LandingPage = () => {
     const [combos, setCombos] = useState([]);
@@ -21,7 +22,7 @@ const LandingPage = () => {
 
     const bookCombo = (c) => {
         const text = c.custom_message || `Hi! I want to book the ${c.name} combo (₹${c.price}).`;
-        window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(text)}`, '_blank');
+        openWhatsApp(waNumber, text);
     };
     return (
         <div className="relative pt-20 overflow-hidden">

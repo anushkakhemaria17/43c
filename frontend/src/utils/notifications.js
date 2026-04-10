@@ -1,6 +1,6 @@
-// Notification utility for WhatsApp and SMS
 // Admin WhatsApp number
 const ADMIN_WHATSAPP = '919479810400';
+import { openWhatsApp } from './whatsapp';
 
 /**
  * Opens WhatsApp to send a message to the admin about a food order.
@@ -11,9 +11,7 @@ const ADMIN_WHATSAPP = '919479810400';
  */
 export const sendFoodOrderWhatsApp = (totalItems, items, customerMobile) => {
   const message = `I have placed my food order, with ${totalItems} item${totalItems !== 1 ? 's' : ''} (qty).`;
-  const encodedMsg = encodeURIComponent(message);
-  const waUrl = `https://wa.me/${ADMIN_WHATSAPP}?text=${encodedMsg}`;
-  window.open(waUrl, '_blank');
+  openWhatsApp(ADMIN_WHATSAPP, message);
 };
 
 /**
@@ -24,9 +22,7 @@ export const sendFoodOrderWhatsApp = (totalItems, items, customerMobile) => {
  */
 export const sendBookingWhatsApp = (slot, date, mobile) => {
   const message = `New booking at 43C. Slot: ${slot} on ${date} by mobile: ${mobile}. Please check.`;
-  const encodedMsg = encodeURIComponent(message);
-  const waUrl = `https://wa.me/${ADMIN_WHATSAPP}?text=${encodedMsg}`;
-  window.open(waUrl, '_blank');
+  openWhatsApp(ADMIN_WHATSAPP, message);
 };
 
 /**
