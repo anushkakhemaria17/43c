@@ -17,22 +17,28 @@ export const getSlot24Label = (hour) => {
   return `${pad(hour)}:00 - ${pad(hour + 1)}:00`;
 };
 
+const getLocalYYYYMMDD = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 // Returns array of date strings "YYYY-MM-DD" for today to today+30
 export const getAvailableDates = () => {
   const dates = [];
   const today = new Date();
   for (let i = 0; i <= 30; i++) {
-    const d = new Date(today);
-    d.setDate(today.getDate() + i);
-    dates.push(d.toISOString().split('T')[0]);
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
+    dates.push(getLocalYYYYMMDD(d));
   }
   return dates;
 };
 
-export const getTodayStr = () => new Date().toISOString().split('T')[0];
+export const getTodayStr = () => getLocalYYYYMMDD();
 
 /**
- * Returns { hour: 'available' | 'booked' | 'closed' }
+ * Returns { hour: 'available' | 'booked' | 'closed' | 'passed' }
  * IMPORTANT: Only bookings with status "confirmed" or "completed" block a slot.
  * "pending" bookings do NOT block slots — admin must confirm first.
  * For shared screens, it only blocks if seats booked >= capacity.
@@ -41,8 +47,15 @@ export const getSlotStatusMap = (dateStr, bookings, closedSlots, screen, screenM
   const map = {};
   const seatsBooked = {};
   
+  const todayStr = getLocalYYYYMMDD();
+  const currentHour = new Date().getHours();
+  
   SLOT_HOURS.forEach(h => { 
-    map[h] = 'available';
+    if (dateStr === todayStr && h <= currentHour) {
+      map[h] = 'passed';
+    } else {
+      map[h] = 'available';
+    }
     seatsBooked[h] = 0;
   });
 

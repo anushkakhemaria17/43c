@@ -693,8 +693,8 @@ Please let me know how I can confirm this booking. Thanks!`;
                             to {getSlotLabel(hour).split(' - ')[1]}
                           </div>
                           {!isAvail && (
-                            <span className={`absolute top-1 sm:top-2 right-1 sm:right-2 text-[7px] sm:text-[8px] uppercase font-black px-1.5 py-0.5 rounded-full ${status === 'booked' ? 'bg-red-500/20 text-red-400' : 'bg-gray-500/20 text-gray-400'}`}>
-                              {status === 'booked' ? 'Booked' : 'Closed'}
+                            <span className={`absolute top-1 sm:top-2 right-1 sm:right-2 text-[7px] sm:text-[8px] uppercase font-black px-1.5 py-0.5 rounded-full ${status === 'booked' ? 'bg-red-500/20 text-red-400' : status === 'passed' ? 'bg-white/10 text-white/40' : 'bg-gray-500/20 text-gray-400'}`}>
+                              {status === 'booked' ? 'Booked' : status === 'passed' ? 'Passed' : 'Closed'}
                             </span>
                           )}
                           {isSelected && <CheckCircle2 size={12} className="absolute top-1 sm:top-2 right-1 sm:right-2 text-primary" />}
