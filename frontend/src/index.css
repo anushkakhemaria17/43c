@@ -52,3 +52,26 @@
   -ms-overflow-style: none;  /* IE and Edge */
   scrollbar-width: none;  /* Firefox */
 }
+
+.card-glow {
+  transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+
+.card-glow:hover {
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 20px rgba(212, 169, 95, 0.1);
+  border-color: rgba(212, 169, 95, 0.4);
+  transform: translateY(-4px);
+}
+
+.premium-border {
+  border: 1px solid rgba(212, 169, 95, 0.2);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.01));
+}
+
+.tracking-luxury {
+  letter-spacing: 0.3em;
+}
+
+.gold-glow {
+  filter: drop-shadow(0 0 8px rgba(212, 169, 95, 0.4));
+}

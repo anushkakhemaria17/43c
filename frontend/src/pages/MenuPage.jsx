@@ -306,8 +306,8 @@ const MenuPage = () => {
 
       {/* ── Header ── */}
       <div className="text-center mb-10">
-        <span className="text-[10px] uppercase tracking-[0.4em] text-accent font-black mb-3 block">43C · Café Lounge</span>
-        <h1 className="text-4xl md:text-6xl font-heading mb-2 gold-text-gradient leading-tight">Culinary Collection</h1>
+        <span className="text-[10px] uppercase tracking-[0.5em] text-accent font-black mb-3 block">43C · LUXE CAFÉ</span>
+        <h1 className="text-4xl md:text-6xl font-heading mb-2 gold-text-gradient leading-tight">Gourmet Selection</h1>
         <div className="flex items-center justify-center gap-3 mt-3">
           <div className="h-px flex-1 max-w-[100px] bg-gradient-to-r from-transparent to-accent/40"></div>
           <span className="text-accent/60">❖</span>
@@ -383,7 +383,7 @@ const MenuPage = () => {
                       initial={{ opacity: 0, scale: 0.95 }}
                       whileInView={{ opacity: 1, scale: 1 }}
                       viewport={{ once: true }}
-                      className="glass-card overflow-hidden group hover:border-accent/40 transition-all duration-300 flex flex-col sm:flex-row md:flex-col"
+                      className="glass-card card-glow overflow-hidden group border-white/10 flex flex-col sm:flex-row md:flex-col"
                     >
                       {/* Image area */}
                       <div className="w-full sm:w-1/3 md:w-full aspect-[4/3] sm:aspect-square md:aspect-video bg-gradient-to-br from-[#0B0F3A] to-[#05071A] relative overflow-hidden flex items-center justify-center">
@@ -466,7 +466,6 @@ const MenuPage = () => {
           )}
         </div>
       )}
-
       {/* ── Floating Cart Button ── */}
       <AnimatePresence>
         {getCartItemCount() > 0 && !showCart && (
@@ -475,7 +474,7 @@ const MenuPage = () => {
           >
             <button
               onClick={() => setShowCart(true)}
-              className="w-full bg-accent text-primary p-4 rounded-2xl flex justify-between items-center shadow-[0_0_40px_rgba(212,169,95,0.35)] font-black uppercase tracking-widest text-[10px]"
+              className="w-full bg-accent text-primary p-4 rounded-2xl flex justify-between items-center shadow-[0_0_40px_rgba(212,169,95,0.4)] font-black uppercase tracking-widest text-[10px] active:scale-95 transition-transform"
             >
               <div className="flex items-center gap-3">
                 <div className="bg-primary text-accent w-7 h-7 rounded-full flex items-center justify-center text-sm font-heading">
@@ -503,9 +502,9 @@ const MenuPage = () => {
               transition={{ type: 'spring', damping: 25 }}
               className="w-full max-w-md bg-[#05071A] border-l border-white/10 relative z-10 flex flex-col h-full shadow-2xl"
             >
-              <div className="p-6 border-b border-white/10 flex justify-between items-center bg-[#0B0F3A]">
-                <h2 className="text-2xl font-heading flex items-center gap-3">
-                  <ShoppingBag size={20} className="text-accent" /> Your Tray
+              <div className="p-6 border-b border-white/10 flex justify-between items-center bg-black/40 backdrop-blur-2xl">
+                <h2 className="text-xl font-heading flex items-center gap-3 gold-text-gradient font-black">
+                  <ShoppingBag size={20} className="text-accent" /> Your Selection
                 </h2>
                 <button onClick={() => setShowCart(false)} className="text-white/40 hover:text-white transition-colors">
                   <X size={22} />
@@ -544,15 +543,18 @@ const MenuPage = () => {
 
               {Object.values(cart).length > 0 && (
                 <div className="p-6 border-t border-white/10 bg-[#0B0F3A] space-y-4 flex-shrink-0">
-                  <div className="flex gap-2">
-                    <input 
-                      type="text" 
-                      placeholder="Coupon Code" 
-                      value={couponCode} 
-                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm uppercase focus:border-accent outline-none"
-                    />
-                    <button onClick={handleApplyCoupon} className="gold-button !py-2 !px-4 text-xs">Apply</button>
+                  <div className="space-y-4">
+                    <p className="text-[9px] uppercase tracking-widest text-white/40 font-black">Special Code</p>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        placeholder="COUPON CODE" 
+                        value={couponCode} 
+                        onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                        className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm uppercase focus:border-accent outline-none"
+                      />
+                      <button onClick={handleApplyCoupon} className="gold-button !py-3 !px-6 text-[10px] font-black uppercase tracking-widest">Apply</button>
+                    </div>
                   </div>
                   {couponError && <p className="text-red-400 text-xs">{couponError}</p>}
                   {appliedCoupon && <p className="text-green-400 text-xs">Coupon "{appliedCoupon.code}" applied!</p>}
@@ -576,11 +578,11 @@ const MenuPage = () => {
                   <button
                     onClick={placeOrder}
                     disabled={loading}
-                    className="gold-button w-full !rounded-xl flex justify-center items-center gap-2 !py-4 mt-2"
+                    className="gold-button w-full !rounded-xl flex justify-center items-center gap-2 !py-5 mt-2 transform transition-all active:scale-95 shadow-lg shadow-accent/20"
                   >
                     {loading
-                      ? <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }} className="w-5 h-5 border-2 border-[#0B0F3A] border-t-transparent rounded-full" />
-                      : 'Place Order & WhatsApp'
+                      ? <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }} className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full" />
+                      : 'Confirm & Send Order'
                     }
                   </button>
                   <p className="text-center text-[9px] uppercase tracking-widest text-white/20">
@@ -610,8 +612,8 @@ const MenuPage = () => {
                 <div className="w-14 h-14 bg-accent rounded-full flex items-center justify-center mx-auto shadow-[0_0_30px_rgba(212,169,95,0.4)]">
                   <CheckCircle2 size={28} className="text-primary" />
                 </div>
-                <h2 className="text-2xl font-heading gold-text-gradient font-black">Order Placed!</h2>
-                <p className="text-white/40 text-[10px] uppercase tracking-widest">Pending admin confirmation</p>
+                <h2 className="text-2xl font-heading gold-text-gradient font-black">Ready to Serve!</h2>
+                <p className="text-white/40 text-[10px] uppercase tracking-widest leading-none">Your request has been sent to the vault</p>
               </div>
 
               <div className="bg-white/5 rounded-xl p-4 space-y-2 border border-white/10">

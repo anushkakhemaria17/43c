@@ -127,11 +127,16 @@ const CustomerGuide = () => {
                whileHover={{ scale: 1.02 }}
                className="navy-card !bg-gradient-to-br from-accent/20 to-transparent p-10 mt-12 border-accent/30 text-center space-y-6"
              >
-                <h3 className="text-2xl font-heading">Ready to Start?</h3>
-                <p className="text-sm text-white/50 mb-6">Your private elite lounge is just 60 seconds away.</p>
-                <a href="/book" className="gold-button w-full block !py-4 text-xs font-black uppercase tracking-[0.3em]">
-                  Reserve Your Screen Now
-                </a>
+                <h3 className="text-2xl font-heading gold-text-gradient font-black">Ready for the Experience?</h3>
+                <p className="text-sm text-white/50 mb-6 font-medium uppercase tracking-widest text-[9px]">Your private elite lounge and gourmet treats are just 60 seconds away.</p>
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <a href="/book" className="gold-button flex-1 flex items-center justify-center gap-2 !py-5 text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-accent/20">
+                    <Zap size={14} className="fill-primary" /> Reserve Experience
+                  </a>
+                  <a href="/menu" className="glass-card flex-1 flex items-center justify-center gap-2 !py-5 text-[10px] font-black uppercase tracking-[0.2em] border-accent/10 hover:border-accent/40 bg-white/5 hover:bg-accent/10 transition-all text-center">
+                    <Utensils size={14} className="text-accent" /> Order Gourmet Food
+                  </a>
+                </div>
              </motion.div>
           </section>
         </div>

@@ -507,8 +507,8 @@ Please let me know how I can confirm this booking. Thanks!`;
               {authMode === 'mobile' && (
                 <form onSubmit={handleMobileSubmit} className="space-y-8">
                   <div className="text-center space-y-2">
-                    <h2 className="text-3xl font-heading">Welcome to <span className="gold-text-gradient">43C</span></h2>
-                    <p className="text-[10px] uppercase tracking-widest text-white/40">Enter your mobile number to continue</p>
+                    <h2 className="text-3xl font-heading gold-text-gradient font-black">Welcome Back</h2>
+                    <p className="text-[10px] uppercase tracking-widest text-white/40">Enter your number to continue</p>
                   </div>
                   <div className="space-y-2">
                     <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Mobile Number</label>
@@ -659,11 +659,11 @@ Please let me know how I can confirm this booking. Thanks!`;
             )}
 
             <div className="flex flex-col lg:grid lg:grid-cols-3 gap-6 lg:gap-8">
-              {/* Slot Grid */}
-              <div className="lg:col-span-2 order-2 lg:order-1">
+              {/* Main Selection Area */}
+              <div className="lg:col-span-2 order-1 lg:order-1 space-y-6">
                 <div className="flex items-center gap-3 mb-4">
                   <Clock size={16} className="text-accent" />
-                  <h3 className="text-sm uppercase tracking-widest font-black text-white/60">Select Slots</h3>
+                  <h3 className="text-sm uppercase tracking-widest font-black text-white/60">Choose Your Time</h3>
                   <span className="text-[9px] text-white/30 ml-auto">Min. 1 required</span>
                 </div>
 
@@ -710,10 +710,10 @@ Please let me know how I can confirm this booking. Thanks!`;
                 </div>
               </div>
 
-              {/* Summary */}
-              <div className="space-y-4 order-1 lg:order-2">
-                <div className="glass-card p-5 sm:p-6 space-y-6">
-                  <h4 className="text-sm uppercase tracking-widest font-black text-white/40">Summary</h4>
+              {/* Reservation Sidebar */}
+              <div className="space-y-4 order-2 lg:order-2">
+                <div className="glass-card premium-border p-5 sm:p-6 space-y-6">
+                  <h4 className="text-sm uppercase tracking-luxury font-black text-accent/60">Your Experience</h4>
 
                   {/* Membership Credits Toggle */}
                   {activeMembership && (
@@ -835,11 +835,11 @@ Please let me know how I can confirm this booking. Thanks!`;
 
             <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <p className="text-[9px] uppercase tracking-widest text-white/30">Date</p>
-                      <p className="text-sm font-medium">{new Date(selectedDate + 'T00:00:00').toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                      <p className="text-[9px] uppercase tracking-widest text-white/30 font-black">Selected Date</p>
+                      <p className="text-sm font-medium">{new Date(selectedDate + 'T00:00:00').toLocaleDateString('en', { weekday: 'short', month: 'long', day: 'numeric' })}</p>
                     </div>
-                    <div className="space-y-2">
-                      <p className="text-[9px] uppercase tracking-widest text-white/30">Screen</p>
+                    <div className="space-y-2 text-right">
+                      <p className="text-[9px] uppercase tracking-widest text-white/30 font-black">Lounge Area</p>
                       <p className="text-sm font-medium text-accent">{selectedScreen}</p>
                     </div>
                   </div>
@@ -888,24 +888,24 @@ Please let me know how I can confirm this booking. Thanks!`;
                     )}
                     
                     <div className="mt-4 mb-4">
-                      <p className="text-[9px] uppercase tracking-widest text-white/40 mb-2 font-black">Apply Discount Code</p>
-                      <div className="relative group">
+                      <p className="text-[9px] uppercase tracking-widest text-white/40 mb-2 font-black">Special Code</p>
+                      <div className="flex gap-2">
                         <input 
                           type="text" 
-                          placeholder="Coupon Code" 
+                          placeholder="CUPON CODE" 
                           value={couponCode} 
                           onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                          className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-3 text-sm uppercase focus:border-accent outline-none pr-24 transition-all"
+                          className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm uppercase focus:border-accent outline-none transition-all"
                         />
                         <button 
                           onClick={handleApplyCoupon} 
-                          className="absolute right-1.5 top-1.5 bottom-1.5 px-5 bg-accent text-primary rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-accent/80 transition-all active:scale-95"
+                          className="px-6 bg-accent text-primary rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-accent/80 transition-all active:scale-95 whitespace-nowrap"
                         >
                           Apply
                         </button>
                       </div>
                       {couponError && <p className="text-red-400 text-[10px] mt-2 ml-1">⚠ {couponError}</p>}
-                      {appliedCoupon && <p className="text-green-400 text-[10px] mt-2 ml-1 flex items-center gap-1"><CheckCircle2 size={10} /> Coupon "{appliedCoupon.code}" applied!</p>}
+                      {appliedCoupon && <p className="text-green-400 text-[10px] mt-2 ml-1 flex items-center gap-1"><CheckCircle2 size={10} /> Promo code applied!</p>}
                     </div>
 
                     {appliedCoupon && (
@@ -934,12 +934,12 @@ Please let me know how I can confirm this booking. Thanks!`;
                   </label>
                 </div>
 
-                <button onClick={handleBooking} disabled={selectedSlots.length === 0 || loading || !termsAccepted}
-                  className={`gold-button w-full py-5 uppercase tracking-widest font-black text-xs flex items-center justify-center gap-2 ${(selectedSlots.length === 0 || !termsAccepted) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                  <MessageCircle size={14} />
-                  {loading ? 'Processing...' : 'Confirm & Send on WhatsApp'}
-                </button>
+                  <button onClick={handleBooking} disabled={selectedSlots.length === 0 || loading || !termsAccepted}
+                    className={`gold-button w-full py-5 uppercase tracking-widest font-black text-xs flex items-center justify-center gap-2 transform transition-all active:scale-95 ${(selectedSlots.length === 0 || !termsAccepted) ? 'opacity-40 cursor-not-allowed bg-white/10 text-white/20' : 'hover:shadow-[0_0_20px_rgba(212,169,95,0.3)]'}`}
+                  >
+                    <MessageCircle size={14} />
+                    {loading ? 'Securing Slot...' : 'Confirm Reservation'}
+                  </button>
                 <p className="text-[9px] text-white/20 text-center uppercase tracking-widest">WhatsApp will open to confirm with admin</p>
               </div>
             </div>
