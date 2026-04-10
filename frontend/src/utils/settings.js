@@ -2,7 +2,7 @@ import { db } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 const DEFAULTS = {
-  whatsapp_number: '9479810400',
+  whatsapp_number: '919479810400',
 };
 
 /**
@@ -27,7 +27,9 @@ export const getSettings = async () => {
  */
 export const getWhatsAppNumber = async () => {
   const settings = await getSettings();
-  return settings.whatsapp_number || DEFAULTS.whatsapp_number;
+  const num = settings.whatsapp_number || DEFAULTS.whatsapp_number;
+  if (num && num.length === 10) return '91' + num;
+  return num;
 };
 
 /**

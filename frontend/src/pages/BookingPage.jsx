@@ -512,15 +512,18 @@ Please let me know how I can confirm this booking. Thanks!`;
                   </div>
                   <div className="space-y-2">
                     <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Mobile Number</label>
-                    <input
-                      type="tel"
-                      placeholder="10-digit mobile number"
-                      className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl focus:border-accent outline-none text-center text-xl tracking-widest"
-                      required
-                      maxLength={10}
-                      value={mobile}
-                      onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))}
-                    />
+                    <div className="relative">
+                      <span className="absolute left-6 top-1/2 -translate-y-1/2 text-white/20 font-black text-xl">+91</span>
+                      <input
+                        type="tel"
+                        placeholder="98765-43210"
+                        className="w-full bg-white/5 border border-white/10 p-5 pl-20 rounded-2xl focus:border-accent outline-none text-xl tracking-widest"
+                        required
+                        maxLength={10}
+                        value={mobile}
+                        onChange={(e) => setMobile(e.target.value.replace(/\D/g, ''))}
+                      />
+                    </div>
                   </div>
                   <button type="submit" disabled={loading} className="gold-button w-full py-5 uppercase tracking-widest text-xs font-black">
                     {loading ? 'Checking...' : 'Continue'}

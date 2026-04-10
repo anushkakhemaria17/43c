@@ -25,13 +25,19 @@ const AdminLogin = () => {
     setLoading(true);
     setError('');
     try {
-      if (mobile === '9479810400' && password === '43cadmin') {
+      const cleanedMobile = mobile.replace(/\D/g, '');
+      const formattedMobile = cleanedMobile.length === 10 ? '91' + cleanedMobile : cleanedMobile;
+
+      if (formattedMobile === '919479810400' && password === '43cadmin') {
         localStorage.setItem('admin_access', 'true');
         localStorage.setItem('admin_name', 'Super Admin');
         navigate('/admin');
         return;
       }
-      const q = query(collection(db, 'admins'), where('mobile', '==', mobile), where('password', '==', password));
+      const q = query(collection(db, 'admins'), 
+        where('mobile', 'in', [cleanedMobile, formattedMobile]), 
+        where('password', '==', password)
+      );
       const snap = await getDocs(q);
       if (!snap.empty) {
         localStorage.setItem('admin_access', 'true');

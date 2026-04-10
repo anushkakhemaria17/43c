@@ -99,8 +99,8 @@ const AdminDashboard = () => {
   const [analyticsData, setAnalyticsData] = useState({ rows: [], bookingDetails: [], foodDetails: [], totalExpenses: 0 });
   const [analyticsMonth, setAnalyticsMonth] = useState(new Date().getMonth());
   const [analyticsYear, setAnalyticsYear] = useState(new Date().getFullYear());
-  const [waNumber, setWaNumber] = useState('9479810400');
-  const [waInput, setWaInput] = useState('9479810400');
+  const [waNumber, setWaNumber] = useState('919479810400');
+  const [waInput, setWaInput] = useState('919479810400');
   const [termsText, setTermsText] = useState("");
   const [editPrice, setEditPrice] = useState({});
   const [foodCombos, setFoodCombos] = useState([]);
@@ -277,7 +277,12 @@ const AdminDashboard = () => {
       try {
         const snap = await getDocs(collection(db, 'settings'));
         const globals = snap.docs.find(d => d.id === 'global');
-        if (globals) { setWaNumber(globals.data().whatsapp_number || '9479810400'); setWaInput(globals.data().whatsapp_number || '9479810400'); }
+        if (globals) { 
+          const num = globals.data().whatsapp_number || '919479810400';
+          const formatted = num.length === 10 ? '91' + num : num;
+          setWaNumber(formatted); 
+          setWaInput(formatted); 
+        }
         const pSnap = await getDocs(collection(db, 'pricing'));
         if (!pSnap.empty && pSnap.docs[0].data().screens) {
           const loadedMap = pSnap.docs[0].data().screens;
@@ -368,7 +373,12 @@ const AdminDashboard = () => {
     };
 
     const saveSettings = async () => {
-      try { await setDoc(doc(db, 'settings', 'global'), { whatsapp_number: waInput }, { merge: true }); setWaNumber(waInput); alert('Settings saved!'); } catch (e) { alert('Failed'); }
+      try { 
+        const formatted = waInput.length === 10 ? '91' + waInput : waInput;
+        await setDoc(doc(db, 'settings', 'global'), { whatsapp_number: formatted }, { merge: true }); 
+        setWaNumber(formatted); 
+        alert('Settings saved!'); 
+      } catch (e) { alert('Failed'); }
     };
 
     const saveTerms = async () => {
@@ -2404,7 +2414,7 @@ const AdminDashboard = () => {
                         placeholder="10-digit number" />
                       <button onClick={saveSettings} className="gold-button !px-6 !py-4 !text-[10px] font-black uppercase tracking-widest">Save</button>
                     </div>
-                    <p className="text-[10px] text-white/20 mt-3">Current: +91 {waNumber}</p>
+                    <p className="text-[10px] text-white/20 mt-3">Current: +{waNumber.startsWith('91') ? waNumber : `91${waNumber}`}</p>
                   </div>
 
                   <div className="pt-6 border-t border-white/10">
