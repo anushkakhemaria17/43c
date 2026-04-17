@@ -6,8 +6,8 @@
 
 @layer base {
   body {
-    @apply bg-[#05071A] text-white font-body;
-    background-image: radial-gradient(circle at 50% 50%, #0B0F3A 0%, #05071A 100%);
+    @apply bg-[#0a1128] text-white font-body;
+    background-image: radial-gradient(circle at 50% 50%, #1e3a8a 0%, #0a1128 100%);
     background-attachment: fixed;
   }
   
@@ -19,7 +19,7 @@
 .luxury-bg {
   background: radial-gradient(circle at top right, rgba(212, 169, 95, 0.05) 0%, transparent 50%),
               radial-gradient(circle at bottom left, rgba(140, 47, 27, 0.05) 0%, transparent 50%),
-              #05071A;
+              #0a1128;
 }
 
 .mesh-pattern {
@@ -31,11 +31,11 @@
 }
 
 .gold-button {
-  @apply bg-gradient-to-r from-[#D4A95F] to-[#b58d4a] text-[#0B0F3A] font-bold px-8 py-4 rounded-full hover:shadow-[0_0_20px_rgba(212,169,95,0.4)] transition-all duration-500 transform hover:-translate-y-1;
+  @apply bg-gradient-to-r from-[#D4A95F] to-[#b58d4a] text-[#1e3a8a] font-bold px-8 py-4 rounded-full hover:shadow-[0_0_20px_rgba(212,169,95,0.4)] transition-all duration-500 transform hover:-translate-y-1;
 }
 
 .navy-card {
-  @apply bg-gradient-to-br from-[#0B0F3A]/40 to-transparent border border-[#D4A95F]/10 rounded-3xl p-8 hover:border-[#D4A95F]/40 transition-all duration-500;
+  @apply bg-gradient-to-br from-[#1e3a8a]/40 to-transparent border border-[#D4A95F]/10 rounded-3xl p-8 hover:border-[#D4A95F]/40 transition-all duration-500;
 }
 
 .gold-text-gradient {

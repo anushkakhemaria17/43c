@@ -6,10 +6,10 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: "#0B0F3A",
+        primary: "#1e3a8a",
         accent: "#D4A95F",
         secondary: "#8C2F1B",
-        bgDark: "#05071A",
+        bgDark: "#0a1128",
       },
       fontFamily: {
         heading: ["'Playfair Display'", "serif"],

@@ -57,7 +57,7 @@ const AdminGuide = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-[#05071A] text-white">
+    <div className="min-h-screen bg-[#0a1128] text-white">
       {/* Mini Header / Back Action */}
       <div className="fixed top-0 left-0 right-0 z-50 bg-black/40 backdrop-blur-xl border-b border-white/5 p-4 flex items-center justify-between">
          <a href="/admin-dashboard" className="flex items-center gap-2 text-white/40 hover:text-accent transition-colors">
@@ -177,3 +177,4 @@ const AdminGuide = () => {
 };
 
 export default AdminGuide;
+

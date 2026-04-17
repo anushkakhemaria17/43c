@@ -252,3 +252,4 @@ const PreviousBookings = () => {
 };
 
 export default PreviousBookings;
+

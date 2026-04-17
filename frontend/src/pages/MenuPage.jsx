@@ -387,7 +387,7 @@ const MenuPage = () => {
                       className="glass-card card-glow overflow-hidden group border-white/10 flex flex-col sm:flex-row md:flex-col"
                     >
                       {/* Image area */}
-                      <div className="w-full sm:w-1/3 md:w-full aspect-[4/3] sm:aspect-square md:aspect-video bg-gradient-to-br from-[#0B0F3A] to-[#05071A] relative overflow-hidden flex items-center justify-center">
+                      <div className="w-full sm:w-1/3 md:w-full aspect-[4/3] sm:aspect-square md:aspect-video bg-gradient-to-br from-[#1e3a8a] to-[#0a1128] relative overflow-hidden flex items-center justify-center">
                         {item.image_url ? (
                           <img
                             src={getLocalAsset(item.image_url, 'menu')}
@@ -501,7 +501,7 @@ const MenuPage = () => {
             <motion.div
               initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25 }}
-              className="w-full max-w-md bg-[#05071A] border-l border-white/10 relative z-10 flex flex-col h-full shadow-2xl"
+              className="w-full max-w-md bg-[#0a1128] border-l border-white/10 relative z-10 flex flex-col h-full shadow-2xl"
             >
               <div className="p-6 border-b border-white/10 flex justify-between items-center bg-black/40 backdrop-blur-2xl">
                 <h2 className="text-xl font-heading flex items-center gap-3 gold-text-gradient font-black">
@@ -543,7 +543,7 @@ const MenuPage = () => {
               </div>
 
               {Object.values(cart).length > 0 && (
-                <div className="p-6 border-t border-white/10 bg-[#0B0F3A] space-y-4 flex-shrink-0">
+                <div className="p-6 border-t border-white/10 bg-[#1e3a8a] space-y-4 flex-shrink-0">
                   <div className="space-y-4">
                     <p className="text-[9px] uppercase tracking-widest text-white/40 font-black">Special Code</p>
                     <div className="flex gap-2 items-center overflow-hidden">
@@ -607,7 +607,7 @@ const MenuPage = () => {
             />
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-              className="glass-card !bg-[#05071A] p-8 max-w-md w-full relative z-10 border-accent/30 space-y-5"
+              className="glass-card !bg-[#0a1128] p-8 max-w-md w-full relative z-10 border-accent/30 space-y-5"
             >
               <div className="text-center space-y-3">
                 <div className="w-14 h-14 bg-accent rounded-full flex items-center justify-center mx-auto shadow-[0_0_30px_rgba(212,169,95,0.4)]">
@@ -650,3 +650,4 @@ const MenuPage = () => {
 };
 
 export default MenuPage;
+

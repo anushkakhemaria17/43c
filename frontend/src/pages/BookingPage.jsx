@@ -487,7 +487,7 @@ Please let me know how I can confirm this booking. Thanks!`;
         {['Login', 'Select Slot', 'Done'].map((label, i) => {
           const s = i + 1;
           return (
-            <div key={s} className="flex flex-col items-center gap-2 bg-[#05071A] px-4">
+            <div key={s} className="flex flex-col items-center gap-2 bg-[#0a1128] px-4">
               <div className={`w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all duration-500 ${step >= s ? 'border-accent bg-accent text-primary' : 'border-white/20 text-white/40'}`}>
                 {step > s ? <CheckCircle2 size={20} /> : <span className="font-heading">{s}</span>}
               </div>
@@ -1031,3 +1031,4 @@ Please let me know how I can confirm this booking. Thanks!`;
 };
 
 export default BookingPage;
+

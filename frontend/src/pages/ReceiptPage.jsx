@@ -72,7 +72,7 @@ const ReceiptPage = () => {
 
           <div className="glass-card overflow-hidden !rounded-[2.5rem] shadow-2xl relative">
             {/* Header */}
-            <div className="bg-gradient-to-br from-[#0B0F3A] to-[#05071A] p-8 text-center border-b border-white/5 relative overflow-hidden">
+            <div className="bg-gradient-to-br from-[#1e3a8a] to-[#0a1128] p-8 text-center border-b border-white/5 relative overflow-hidden">
               <div className="absolute inset-0 mesh-pattern opacity-10"></div>
               <div className="relative z-10">
                 <span className="text-[10px] uppercase tracking-[0.6em] text-accent font-black mb-3 block">Official Entry Pass</span>
@@ -87,7 +87,7 @@ const ReceiptPage = () => {
               </div>
             </div>
 
-            <div className="p-8 space-y-8 bg-[#05071A]/50 relative">
+            <div className="p-8 space-y-8 bg-[#0a1128]/50 relative">
               {/* QR Code */}
               <div className="flex justify-center flex-col items-center gap-4">
                 <div className="p-4 bg-white rounded-[2rem] shadow-[0_0_30px_rgba(255,255,255,0.1)] hover:scale-105 transition-transform duration-500">
@@ -181,3 +181,4 @@ const ReceiptPage = () => {
 };
 
 export default ReceiptPage;
+

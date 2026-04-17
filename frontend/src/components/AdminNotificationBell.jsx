@@ -96,7 +96,7 @@ const AdminNotificationBell = ({ onNavigate }) => {
               animate={{ opacity: 1, x: 0, y: 0 }}
               exit={{ opacity: 0, x: 10, y: 0 }}
               transition={{ duration: 0.2 }}
-              className="fixed top-0 right-0 h-[100dvh] w-[300px] sm:w-80 sm:absolute sm:top-14 sm:right-0 sm:bottom-auto sm:h-auto sm:max-h-[400px] bg-[#05071A] border-l sm:border border-white/10 sm:rounded-2xl shadow-2xl z-[110] flex flex-col overflow-hidden"
+              className="fixed top-0 right-0 h-[100dvh] w-[300px] sm:w-80 sm:absolute sm:top-14 sm:right-0 sm:bottom-auto sm:h-auto sm:max-h-[400px] bg-[#0a1128] border-l sm:border border-white/10 sm:rounded-2xl shadow-2xl z-[110] flex flex-col overflow-hidden"
             >
               <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 bg-white/5">
                 <span className="text-[10px] uppercase tracking-widest font-black text-white/60">Admin Notifications</span>
@@ -143,3 +143,4 @@ const AdminNotificationBell = ({ onNavigate }) => {
 };
 
 export default AdminNotificationBell;
+

@@ -17,7 +17,7 @@ const Navbar = () => {
 
   return (
     <>
-      <nav className="fixed top-0 left-0 w-full z-[9999] bg-[#05071A]/70 backdrop-blur-xl border-b border-white/5 pt-2 pb-2 transition-all">
+      <nav className="fixed top-0 left-0 w-full z-[9999] bg-[#0a1128]/70 backdrop-blur-xl border-b border-white/5 pt-2 pb-2 transition-all">
         <div className="max-w-[90rem] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16 md:h-20">
             {/* Logo */}
@@ -53,7 +53,7 @@ const Navbar = () => {
               <div className="w-[1px] h-4 bg-white/10 mx-2"></div>
               <Link 
                 to="/membership" 
-                className={`px-5 py-2 rounded-full text-[10px] uppercase font-bold tracking-[0.2em] transition-all duration-300 flex items-center gap-2 ${location.pathname === '/membership' ? 'bg-accent text-[#05071A]' : 'text-accent hover:bg-accent/10'}`}
+                className={`px-5 py-2 rounded-full text-[10px] uppercase font-bold tracking-[0.2em] transition-all duration-300 flex items-center gap-2 ${location.pathname === '/membership' ? 'bg-accent text-[#0a1128]' : 'text-accent hover:bg-accent/10'}`}
               >
                 <Crown size={12} /> Elite
               </Link>
@@ -64,7 +64,7 @@ const Navbar = () => {
                {customer ? (
                  <div className="flex items-center gap-4">
                    {customer.is_staff && (
-                     <Link to="/admin" className="text-[9px] uppercase tracking-widest text-[#05071A] bg-accent hover:bg-accent/80 px-4 py-2 rounded-full font-black shadow-[0_0_15px_rgba(212,169,95,0.4)] transition-all">Admin Panel</Link>
+                     <Link to="/admin" className="text-[9px] uppercase tracking-widest text-[#0a1128] bg-accent hover:bg-accent/80 px-4 py-2 rounded-full font-black shadow-[0_0_15px_rgba(212,169,95,0.4)] transition-all">Admin Panel</Link>
                    )}
                    <NotificationBell userId={customer.id} />
                    <div className="flex items-center gap-2 pl-2 border-l border-white/10">
@@ -103,12 +103,12 @@ const Navbar = () => {
 
       {/* Mobile drawer backdrop */}
       <div 
-        className={`md:hidden fixed inset-0 bg-[#05071A]/80 backdrop-blur-md z-[9998] transition-opacity duration-300 ${isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+        className={`md:hidden fixed inset-0 bg-[#0a1128]/80 backdrop-blur-md z-[9998] transition-opacity duration-300 ${isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
         onClick={() => setIsOpen(false)}
       />
 
       {/* Mobile drawer sidebar */}
-      <div className={`md:hidden fixed top-0 right-0 h-[100dvh] w-4/5 max-w-[320px] bg-[#05071A] border-l border-white/10 z-[9999] transform transition-transform duration-500 cubic-bezier(0.4, 0, 0.2, 1) flex flex-col ${isOpen ? 'translate-x-0 shadow-[-20px_0_50px_rgba(0,0,0,0.5)]' : 'translate-x-full'}`}>
+      <div className={`md:hidden fixed top-0 right-0 h-[100dvh] w-4/5 max-w-[320px] bg-[#0a1128] border-l border-white/10 z-[9999] transform transition-transform duration-500 cubic-bezier(0.4, 0, 0.2, 1) flex flex-col ${isOpen ? 'translate-x-0 shadow-[-20px_0_50px_rgba(0,0,0,0.5)]' : 'translate-x-full'}`}>
         <div className="p-6 flex justify-between items-center border-b border-white/5">
           <span className="text-xs uppercase tracking-[0.3em] font-black text-white/40">Navigation</span>
           <button onClick={() => setIsOpen(false)} className="text-white/40 hover:text-accent hover:bg-white/5 p-2 rounded-full transition-all">
@@ -134,7 +134,7 @@ const Navbar = () => {
             </Link>
           ))}
           
-          <Link to="/membership" onClick={() => setIsOpen(false)} className={`mt-4 p-4 flex items-center justify-between rounded-2xl border transition-all ${location.pathname === '/membership' ? 'bg-accent text-[#05071A] border-transparent' : 'bg-accent/5 text-accent border-accent/20 hover:bg-accent/10'}`}>
+          <Link to="/membership" onClick={() => setIsOpen(false)} className={`mt-4 p-4 flex items-center justify-between rounded-2xl border transition-all ${location.pathname === '/membership' ? 'bg-accent text-[#0a1128] border-transparent' : 'bg-accent/5 text-accent border-accent/20 hover:bg-accent/10'}`}>
              <span className="text-sm font-bold uppercase tracking-widest">Elite Circle</span>
              <Crown size={16} />
           </Link>
@@ -145,7 +145,7 @@ const Navbar = () => {
           </div>
         </div>
 
-        <div className="p-6 border-t border-white/5 bg-gradient-to-t from-[#05071A] to-transparent">
+        <div className="p-6 border-t border-white/5 bg-gradient-to-t from-[#0a1128] to-transparent">
           {customer ? (
             <div className="space-y-4">
               <Link to="/my-bookings" onClick={() => setIsOpen(false)} className="flex items-center gap-3 p-4 rounded-xl border border-white/10 bg-white/5">
@@ -177,3 +177,4 @@ const Navbar = () => {
 };
 
 export default Navbar;
+

@@ -52,7 +52,7 @@ const CustomerGuide = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-[#05071A] text-white">
+    <div className="min-h-screen bg-[#0a1128] text-white">
       <Navbar />
 
       <main className="pt-32 pb-20 px-6 max-w-7xl mx-auto">
@@ -146,3 +146,4 @@ const CustomerGuide = () => {
 };
 
 export default CustomerGuide;
+

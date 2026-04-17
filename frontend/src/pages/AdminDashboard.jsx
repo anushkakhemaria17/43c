@@ -1355,7 +1355,7 @@ const AdminDashboard = () => {
 
     return (
       <div className="flex min-h-screen luxury-bg mesh-pattern relative">
-        <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-[#05071A]/95 backdrop-blur-2xl border-b border-accent/10 z-[60] flex items-center justify-between px-4">
+        <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-[#0a1128]/95 backdrop-blur-2xl border-b border-accent/10 z-[60] flex items-center justify-between px-4">
           <div className="flex items-center gap-3">
             <img src={logo43c} alt="43C" className="h-8 w-8 object-contain rounded-lg" onError={e => e.target.style.display = 'none'} />
             <h1 className="text-sm font-heading gold-text-gradient font-black">Control Panel</h1>
@@ -1372,7 +1372,7 @@ const AdminDashboard = () => {
           <div className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[45]" onClick={() => setIsSidebarOpen(false)} />
         )}
 
-        <div className={`w-64 bg-[#05071A]/95 backdrop-blur-2xl border-r border-[#D4A95F]/20 p-4 lg:p-6 space-y-6 shrink-0 flex flex-col h-[100dvh] fixed lg:sticky top-0 left-0 z-50 transition-transform duration-300 ease-in-out lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className={`w-64 bg-[#0a1128]/95 backdrop-blur-2xl border-r border-[#D4A95F]/20 p-4 lg:p-6 space-y-6 shrink-0 flex flex-col h-[100dvh] fixed lg:sticky top-0 left-0 z-50 transition-transform duration-300 ease-in-out lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="hidden lg:flex items-center gap-3">
             <img src={logo43c} alt="43C" className="h-8 w-8 object-contain rounded-lg" onError={e => e.target.style.display = 'none'} />
             <div className="flex-1 min-w-0">
@@ -1397,7 +1397,7 @@ const AdminDashboard = () => {
             ))}
           </nav>
           <button onClick={() => { localStorage.removeItem('admin_access'); window.location.href = '/admin-login'; }}
-            className="w-full py-3 min-h-[44px] rounded-xl border border-red-500/20 text-red-500 hover:bg-red-500/10 font-bold text-[10px] uppercase tracking-widest transition-all mb-4 lg:mb-0 bg-[#05071A]">
+            className="w-full py-3 min-h-[44px] rounded-xl border border-red-500/20 text-red-500 hover:bg-red-500/10 font-bold text-[10px] uppercase tracking-widest transition-all mb-4 lg:mb-0 bg-[#0a1128]">
             Log Out
           </button>
         </div>
@@ -1731,7 +1731,7 @@ const AdminDashboard = () => {
                           <StatusBadge s={o.status || 'pending'} />
                           <select value={o.status || 'pending'} onChange={e => updateOrderStatusWithNotif(o.id, e.target.value)}
                             className="bg-white/5 border border-white/10 text-white text-xs rounded-lg px-3 py-1.5 outline-none">
-                            {ORDER_STATUSES.map(s => <option key={s} value={s} className="bg-[#05071A]">{s}</option>)}
+                            {ORDER_STATUSES.map(s => <option key={s} value={s} className="bg-[#0a1128]">{s}</option>)}
                           </select>
                           {o.status !== 'cancelled' && o.status !== 'served' && (
                             <button onClick={() => openCancelModal(o.id, 'order')} className="text-[9px] bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-lg font-black uppercase">Cancel</button>
@@ -2334,10 +2334,10 @@ const AdminDashboard = () => {
                   <h2 className="text-3xl font-heading">Analytics <span className="gold-text-gradient italic">Report</span></h2>
                   <div className="flex gap-3 items-center flex-wrap">
                     <select value={analyticsMonth} onChange={e => setAnalyticsMonth(Number(e.target.value))} className="bg-white/5 border border-white/10 text-white text-xs rounded-xl px-4 py-2 outline-none">
-                      {MONTHS.map((m, i) => <option key={i} value={i} className="bg-[#05071A]">{m}</option>)}
+                      {MONTHS.map((m, i) => <option key={i} value={i} className="bg-[#0a1128]">{m}</option>)}
                     </select>
                     <select value={analyticsYear} onChange={e => setAnalyticsYear(Number(e.target.value))} className="bg-white/5 border border-white/10 text-white text-xs rounded-xl px-4 py-2 outline-none">
-                      {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y} className="bg-[#05071A]">{y}</option>)}
+                      {[2024, 2025, 2026, 2027].map(y => <option key={y} value={y} className="bg-[#0a1128]">{y}</option>)}
                     </select>
                     <button onClick={() => exportAnalyticsExcel(analyticsData.rows, analyticsData.bookingDetails, analyticsData.foodDetails, `${MONTHS[analyticsMonth]} ${analyticsYear}`, analyticsData.totalExpenses)}
                       className="gold-button !px-5 !py-2 !text-[10px] flex items-center gap-2">
@@ -2662,7 +2662,7 @@ const AdminDashboard = () => {
         {showExpenseModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowExpenseModal(false)} />
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#05071A] p-8 max-w-md w-full relative z-10 border-accent/20 space-y-5">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#0a1128] p-8 max-w-md w-full relative z-10 border-accent/20 space-y-5">
               <h3 className="text-2xl font-heading text-red-400">Log Expense</h3>
               <form onSubmit={logExpense} className="space-y-4">
                 <input type="text" required placeholder="Expense Title" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-red-400 text-sm" value={expenseForm.title} onChange={e => setExpenseForm({ ...expenseForm, title: e.target.value })} />
@@ -2678,7 +2678,7 @@ const AdminDashboard = () => {
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowMenuModal(false)} />
             <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-              className="glass-card !bg-[#05071A] p-8 max-w-lg w-full relative z-10 border-accent/20 max-h-[95vh] overflow-y-auto"
+              className="glass-card !bg-[#0a1128] p-8 max-w-lg w-full relative z-10 border-accent/20 max-h-[95vh] overflow-y-auto"
             >
               <h3 className="text-2xl font-heading gold-text-gradient mb-6">
                 {isEditingMenu ? '✏️ Edit Menu Item' : '➕ Add Menu Item'}
@@ -2734,7 +2734,7 @@ const AdminDashboard = () => {
                     value={menuForm.category}
                     onChange={e => setMenuForm({ ...menuForm, category: e.target.value })}
                   >
-                    {menuCategories.map(c => <option key={c} value={c} className="bg-[#05071A]">{c}</option>)}
+                    {menuCategories.map(c => <option key={c} value={c} className="bg-[#0a1128]">{c}</option>)}
                   </select>
                 </div>
 
@@ -2789,7 +2789,7 @@ const AdminDashboard = () => {
         {showScreenModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowScreenModal(false)} />
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#05071A] p-8 max-w-lg w-full relative z-10 border-accent/20">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#0a1128] p-8 max-w-lg w-full relative z-10 border-accent/20">
                <h3 className="text-2xl font-heading gold-text-gradient mb-6">{screenForm.id ? 'Edit Screen' : 'Add New Screen'}</h3>
                <form onSubmit={saveScreen} className="space-y-5">
                   <div className="grid grid-cols-2 gap-4">
@@ -2873,7 +2873,7 @@ const AdminDashboard = () => {
         {showComboModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowComboModal(false)} />
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#05071A] p-8 max-w-lg w-full relative z-10 border-accent/20 space-y-5 max-h-[95vh] overflow-y-auto">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#0a1128] p-8 max-w-lg w-full relative z-10 border-accent/20 space-y-5 max-h-[95vh] overflow-y-auto">
               <h3 className="text-2xl font-heading gold-text-gradient mb-6">{comboForm.id ? 'Edit Combo' : 'Create Combo'}</h3>
               <form onSubmit={saveCombo} className="space-y-4">
                 {/* Combo Image Asset mapping */}
@@ -2920,8 +2920,8 @@ const AdminDashboard = () => {
                   <div>
                     <label className="text-[9px] uppercase tracking-widest text-white/40 font-black">Default Screen</label>
                     <select required className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm text-white" value={comboForm.screen_type || ''} onChange={e => setComboForm({ ...comboForm, screen_type: e.target.value })}>
-                       <option value="" disabled className="bg-[#05071A]">Select Screen</option>
-                       {screens.map(s => <option key={s} value={s} className="bg-[#05071A]">{s}</option>)}
+                       <option value="" disabled className="bg-[#0a1128]">Select Screen</option>
+                       {screens.map(s => <option key={s} value={s} className="bg-[#0a1128]">{s}</option>)}
                     </select>
                   </div>
                   <div>
@@ -2965,7 +2965,7 @@ const AdminDashboard = () => {
         {showCouponModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowCouponModal(false)} />
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#05071A] p-8 max-w-lg w-full relative z-10 border-accent/20 space-y-5 max-h-[90vh] overflow-y-auto">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#0a1128] p-8 max-w-lg w-full relative z-10 border-accent/20 space-y-5 max-h-[90vh] overflow-y-auto">
               <h3 className="text-2xl font-heading gold-text-gradient mb-6">{couponForm.id ? 'Edit Coupon' : 'Create Coupon'}</h3>
               <form onSubmit={saveCoupon} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -2976,9 +2976,9 @@ const AdminDashboard = () => {
                   <div className="col-span-2 sm:col-span-1">
                     <label className="text-[10px] uppercase tracking-widest text-white/40 block mb-2">Type</label>
                     <select className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm text-white" value={couponForm.type} onChange={e => setCouponForm({ ...couponForm, type: e.target.value })}>
-                      <option value="percentage" className="bg-[#05071A]">Percentage (%)</option>
-                      <option value="amount" className="bg-[#05071A]">Fixed Amount (₹)</option>
-                      <option value="free_hour" className="bg-[#05071A]">Free Hour</option>
+                      <option value="percentage" className="bg-[#0a1128]">Percentage (%)</option>
+                      <option value="amount" className="bg-[#0a1128]">Fixed Amount (₹)</option>
+                      <option value="free_hour" className="bg-[#0a1128]">Free Hour</option>
                     </select>
                   </div>
                   
@@ -2992,9 +2992,9 @@ const AdminDashboard = () => {
                   <div className="col-span-2 sm:col-span-1">
                     <label className="text-[10px] uppercase tracking-widest text-white/40 block mb-2">Applies To</label>
                     <select className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm text-white" value={couponForm.applies_to} onChange={e => setCouponForm({ ...couponForm, applies_to: e.target.value })}>
-                      <option value="both" className="bg-[#05071A]">Food & Booking</option>
-                      <option value="food" className="bg-[#05071A]">Food Only</option>
-                      <option value="booking" className="bg-[#05071A]">Booking Only</option>
+                      <option value="both" className="bg-[#0a1128]">Food & Booking</option>
+                      <option value="food" className="bg-[#0a1128]">Food Only</option>
+                      <option value="booking" className="bg-[#0a1128]">Booking Only</option>
                     </select>
                   </div>
 
@@ -3038,7 +3038,7 @@ const AdminDashboard = () => {
         {showBookingModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowBookingModal(false)} />
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#05071A] p-8 max-w-2xl w-full relative z-10 border-accent/20 max-h-[90vh] overflow-y-auto space-y-5">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#0a1128] p-8 max-w-2xl w-full relative z-10 border-accent/20 max-h-[90vh] overflow-y-auto space-y-5">
               <h3 className="text-2xl font-heading gold-text-gradient">Manual Booking</h3>
               <form onSubmit={manualBooking} className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
@@ -3075,7 +3075,7 @@ const AdminDashboard = () => {
         {showAdminModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowAdminModal(false)} />
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#05071A] p-8 max-w-md w-full relative z-10 border-accent/20 space-y-5">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#0a1128] p-8 max-w-md w-full relative z-10 border-accent/20 space-y-5">
               <h3 className="text-2xl font-heading gold-text-gradient">Add Administrator</h3>
               <form onSubmit={saveAdmin} className="space-y-4">
                 <input type="text" required placeholder="Name" className="w-full bg-white/5 border border-white/10 p-4 rounded-xl outline-none focus:border-accent text-sm" value={adminForm.name} onChange={e => setAdminForm({ ...adminForm, name: e.target.value })} />
@@ -3091,7 +3091,7 @@ const AdminDashboard = () => {
         {showCancelModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowCancelModal(false)} />
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#05071A] p-8 max-w-md w-full relative z-10 border-red-500/20 space-y-5">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#0a1128] p-8 max-w-md w-full relative z-10 border-red-500/20 space-y-5">
               <h3 className="text-2xl font-heading text-red-400">Cancel {cancelTarget?.type === 'booking' ? 'Booking' : 'Order'}</h3>
               <p className="text-sm text-white/40">Please provide a reason for cancellation. This will be sent to the customer.</p>
               <div className="space-y-4">
@@ -3111,7 +3111,7 @@ const AdminDashboard = () => {
         {showDueModal && dueTarget && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowDueModal(false)} />
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#05071A] p-8 max-w-md w-full relative z-10 border-green-500/20 space-y-5">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#0a1128] p-8 max-w-md w-full relative z-10 border-green-500/20 space-y-5">
               <h3 className="text-2xl font-heading text-green-400">Mark as Completed</h3>
               <div className="bg-white/5 rounded-xl p-4 border border-white/10 space-y-2">
                 <p className="font-bold">{dueTarget.customer_name}</p>
@@ -3137,7 +3137,7 @@ const AdminDashboard = () => {
         {showAdvanceModal && advanceTarget && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowAdvanceModal(false)} />
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#05071A] p-8 max-w-md w-full relative z-10 border-accent/20 space-y-5">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#0a1128] p-8 max-w-md w-full relative z-10 border-accent/20 space-y-5">
               <h3 className="text-2xl font-heading gold-text-gradient">Confirm Booking</h3>
               <div className="bg-white/5 rounded-xl p-4 space-y-2 border border-white/10">
                 <p className="font-bold">{advanceTarget.customer_name}</p>
@@ -3238,7 +3238,7 @@ const AdminDashboard = () => {
         {showMembershipModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowMembershipModal(false)} />
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#05071A] p-8 max-w-md w-full relative z-10 border-accent/20 space-y-6 max-h-[85vh] overflow-y-auto">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="glass-card !bg-[#0a1128] p-8 max-w-md w-full relative z-10 border-accent/20 space-y-6 max-h-[85vh] overflow-y-auto">
               <h3 className="text-2xl font-heading gold-text-gradient">{isEditingMembership ? 'Edit' : 'Create'} Membership</h3>
               <form onSubmit={saveMembership} className="space-y-4">
                 <div className="space-y-1.5">
@@ -3332,3 +3332,4 @@ const AdminDashboard = () => {
   };
 
   export default AdminDashboard;
+

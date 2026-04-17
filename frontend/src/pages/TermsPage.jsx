@@ -29,7 +29,7 @@ const TermsPage = () => {
                 <div className="absolute inset-0 mesh-pattern opacity-10"></div>
                 <div className="relative z-10">
                     <h1 className="text-3xl md:text-5xl font-heading mb-8 gold-text-gradient font-black text-center">Terms & Conditions</h1>
-                    <div className="bg-[#05071A]/50 border border-white/10 rounded-2xl p-6 md:p-10 whitespace-pre-wrap leading-relaxed text-white/80 font-light text-sm md:text-base">
+                    <div className="bg-[#0a1128]/50 border border-white/10 rounded-2xl p-6 md:p-10 whitespace-pre-wrap leading-relaxed text-white/80 font-light text-sm md:text-base">
                         {termsText}
                     </div>
                 </div>
@@ -39,3 +39,4 @@ const TermsPage = () => {
 };
 
 export default TermsPage;
+

@@ -34,7 +34,7 @@ const LandingPage = () => {
                         alt="Lounge"
                         className="w-full h-full object-cover opacity-20 scale-110"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#05071A] via-transparent to-transparent"></div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0a1128] via-transparent to-transparent"></div>
                 </div>
 
                 <div className="max-w-7xl mx-auto w-full z-10 grid md:grid-cols-2 gap-12 items-center">
@@ -108,7 +108,7 @@ const LandingPage = () => {
 
             {/* Combos Section */}
             {combos.length > 0 && (
-                <section className="py-24 px-4 bg-[#05071A]">
+                <section className="py-24 px-4 bg-[#0a1128]">
                     <div className="max-w-7xl mx-auto">
                         <div className="text-center mb-16">
                             <h2 className="text-4xl md:text-5xl font-heading mb-4">Exclusive <span className="gold-text-gradient italic">Combos</span></h2>
@@ -166,3 +166,4 @@ const LandingPage = () => {
 };
 
 export default LandingPage;
+

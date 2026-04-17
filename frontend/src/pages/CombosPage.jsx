@@ -90,11 +90,11 @@ const CombosPage = () => {
                                         <Ticket size={80} className="text-white/5" />
                                     </div>
                                 )}
-                                <div className="absolute inset-0 bg-gradient-to-t from-[#05071A] via-transparent to-transparent opacity-90" />
+                                <div className="absolute inset-0 bg-gradient-to-t from-[#0a1128] via-transparent to-transparent opacity-90" />
                                 
                                 {/* Floating Badge */}
                                 <div className="absolute top-6 right-6">
-                                    <div className="bg-[#05071A]/80 backdrop-blur-md border border-accent/30 px-4 py-2 rounded-2xl flex flex-col items-center">
+                                    <div className="bg-[#0a1128]/80 backdrop-blur-md border border-accent/30 px-4 py-2 rounded-2xl flex flex-col items-center">
                                         <span className="text-[10px] text-accent font-black uppercase tracking-widest leading-none mb-1">Price</span>
                                         <span className="text-xl font-heading text-white font-black leading-none">₹{combo.price}</span>
                                     </div>
@@ -147,8 +147,8 @@ const CombosPage = () => {
                                 >
                                     <div className="absolute inset-0 bg-gradient-to-r from-[#D4A95F] to-[#b58d4a] transition-transform duration-500 group-hover/btn:scale-105" />
                                     <div className="relative flex items-center justify-center gap-3">
-                                        <span className="uppercase tracking-[0.3em] font-black text-[11px] text-[#05071A]">Book Combo</span>
-                                        <ArrowRight size={16} className="text-[#05071A] group-hover/btn:translate-x-2 transition-transform duration-500" />
+                                        <span className="uppercase tracking-[0.3em] font-black text-[11px] text-[#0a1128]">Book Combo</span>
+                                        <ArrowRight size={16} className="text-[#0a1128] group-hover/btn:translate-x-2 transition-transform duration-500" />
                                     </div>
                                 </button>
                             </div>
@@ -175,3 +175,4 @@ const CombosPage = () => {
 };
 
 export default CombosPage;
+
