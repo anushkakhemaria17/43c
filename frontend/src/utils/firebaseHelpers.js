@@ -99,26 +99,37 @@ export const autoCancelPendingBookings = async (bookings, updateFn) => {
   }
 };
 
-// ── WhatsApp: admin → customer ───────────────────────────────────
+// ── WhatsApp: admin → customer for booking confirmation & payment ─────────────────
+
+const encryptAmount = (amount) => btoa(amount.toString());
 
 export const openAdminWhatsApp = ({ customerMobile, customerName, slots, date, guests, totalAmount, comboName }) => {
-  const slotLabels = [...slots].sort((a, b) => a - b).map(h => getSlotLabel(h)).join(', ');
+  const slotLabels = formatSlotsDisplay(slots);
   const advance = Math.ceil(totalAmount * 0.5);
-  const comboSection = comboName ? `\nCombo Package: ${comboName}` : '';
+  const encryptedAmount = encryptAmount(advance);
+  
+  // Custom Domain - usually window.location.origin but since this is utility, we use a placeholder or the actual domain if known.
+  // Using window.location.origin if available, otherwise just /payment
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+  const paymentLink = `${baseUrl}/payment?amount=${encryptedAmount}&name=${encodeURIComponent(customerName)}&type=booking`;
+
   const msg =
-    `Dear ${customerName},\n\nWe are glad to welcome you at 43C! ✨\n\n` +
-    `Reservation Details:\n` +
-    `Date: ${date}\n` +
-    `Time: ${slotLabels}\n` +
-    `Guests: ${guests}${comboSection}\n\n` +
-    `To confirm your booking, please pay a 50% advance (₹${advance}). The remaining balance can be paid on arrival.\n\n` +
-    `Please share the payment screenshot to proceed with confirmation. Thanks!`;
+    `Dear ${customerName},\n\n` +
+    `We are happy to confirm your booking at 43C ✨\n\n` +
+    `📅 Date: ${date}\n` +
+    `🕒 Slot: ${slotLabels}\n` +
+    `👥 Guests: ${guests}${comboName ? `\n🎁 Combo: ${comboName}` : ''}\n\n` +
+    `To confirm your booking, please pay advance amount: ₹${advance}\n\n` +
+    `💳 Payment Link:\n${paymentLink}\n\n` +
+    `After payment, kindly share screenshot on WhatsApp.\n\n` +
+    `We look forward to hosting you 🎬`;
+
   const number = customerMobile.replace(/\D/g, '');
   const wa = number.startsWith('91') ? number : `91${number}`;
   openWhatsApp(wa, msg);
 };
 
-// ── WhatsApp: notify customer on confirmation ────────────────────
+// ── WhatsApp: notify customer on final confirmation after payment ────────────
 
 export const sendBookingConfirmedWhatsApp = ({ customerMobile, customerName, slots, date, guests, totalAmount, advancePaid, comboName }) => {
   const slotLabels = formatSlotsDisplay(slots);
@@ -132,6 +143,29 @@ export const sendBookingConfirmedWhatsApp = ({ customerMobile, customerName, slo
     `Advance Paid: ₹${advancePaid || 0}\n` +
     `Remaining on Arrival: ₹${remaining}\n\n` +
     `Your Entry OTP will be sent to this number 30 mins before your time slot. Have a great experience! ✨`;
+  const number = customerMobile.replace(/\D/g, '');
+  const wa = number.startsWith('91') ? number : `91${number}`;
+  openWhatsApp(wa, msg);
+};
+
+// ── WhatsApp: food order confirmation ────────────────────────────
+
+export const sendFoodOrderWhatsApp = ({ customerMobile, customerName, items, totalAmount }) => {
+  const itemList = items.map(item => `· ${item.qty}x ${item.name}`).join('\n');
+  const encryptedAmount = encryptAmount(totalAmount);
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+  const paymentLink = `${baseUrl}/payment?amount=${encryptedAmount}&name=${encodeURIComponent(customerName)}&type=food`;
+
+  const msg =
+    `Hello ${customerName},\n\n` +
+    `Your food order has been confirmed 🍽️\n\n` +
+    `🧾 Order Details:\n${itemList}\n\n` +
+    `💰 Total Amount: ₹${totalAmount}\n\n` +
+    `Please complete payment using the link below:\n\n` +
+    `💳 Payment Link:\n${paymentLink}\n\n` +
+    `After payment, share screenshot for confirmation.\n\n` +
+    `Thank you!`;
+
   const number = customerMobile.replace(/\D/g, '');
   const wa = number.startsWith('91') ? number : `91${number}`;
   openWhatsApp(wa, msg);

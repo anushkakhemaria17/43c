@@ -17,6 +17,8 @@ import CombosPage from './pages/CombosPage';
 import CustomerGuide from './pages/CustomerGuide';
 import AdminGuide from './pages/AdminGuide';
 
+import PaymentPage from './pages/PaymentPage';
+
 function App() {
   return (
     <AuthProvider>
@@ -26,6 +28,7 @@ function App() {
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/book" element={<BookingPage />} />
+            <Route path="/payment" element={<PaymentPage />} />
             <Route path="/combos" element={<CombosPage />} />
             <Route path="/menu" element={<MenuPage />} />
             <Route path="/receipt/:id" element={<ReceiptPage />} />

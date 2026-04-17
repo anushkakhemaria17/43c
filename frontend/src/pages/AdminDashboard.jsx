@@ -6,7 +6,7 @@ import { LayoutDashboard, Calendar, Users, Wallet, Plus, Clock, UtensilsCrossed,
 import { motion, AnimatePresence } from 'framer-motion';
 import { SLOT_HOURS, getSlotLabel, getAvailableDates, getSlotStatusMap, formatSlotsDisplay, getTodayStr } from '../utils/slots';
 import { exportAnalyticsExcel } from '../utils/exportExcel';
-import { createNotification, autoCompleteBookings, autoCancelPendingBookings, openAdminWhatsApp, sendBookingConfirmedWhatsApp } from '../utils/firebaseHelpers';
+import { createNotification, autoCompleteBookings, autoCancelPendingBookings, openAdminWhatsApp, sendBookingConfirmedWhatsApp, sendFoodOrderWhatsApp } from '../utils/firebaseHelpers';
 import { openWhatsApp } from '../utils/whatsapp';
 import AdminNotificationBell from '../components/AdminNotificationBell';
 import logo43c from '../assets/43C.png';
@@ -147,6 +147,7 @@ const AdminDashboard = () => {
   const [filterDate, setFilterDate] = useState('');
   const [editWaMobile, setEditWaMobile] = useState({});
   const [notifCount, setNotifCount] = useState({ bookings: 0, orders: 0, memberships: 0 });
+  const [paymentSettings, setPaymentSettings] = useState({ upi_id: 'anushka17.khemaria@okicici', mobile_number: '9479810400', qr_image_url: '/assets/payment/qr.jpeg' });
  
   const [membershipPlans, setMembershipPlans] = useState([]);
   const [activeMemberships, setActiveMemberships] = useState([]);
@@ -297,6 +298,10 @@ const AdminDashboard = () => {
         } else {
           setTermsText("43C Lounge – Terms & Conditions\n\nBy proceeding with a booking, you agree to the following:\n\nNo Smoking & No Alcohol\nSmoking and alcohol consumption are strictly prohibited inside the premises.\nA fine of ₹500 will be charged if found smoking.\n\nNo Outside Food\nOutside food and beverages are not allowed.\n\nBehavior Policy\nAny inappropriate, rude, or unacceptable behavior will not be tolerated.\n\nDamage Policy\nAny damage to property must be paid for by the customer.\n\nLegal Action\n43C reserves the right to take strict or legal action in case of misconduct.\n\nResponsibility Clause\nThe person making the booking is fully responsible for all accompanying guests.\n\nNo Refund Policy\nNo refunds will be provided in case of cancellation or no-show.\n\nRight to Refuse Service\nManagement reserves the right to deny or cancel bookings if rules are violated.");
         }
+        const pSettings = await getDoc(doc(db, 'settings', 'payment'));
+        if (pSettings.exists()) {
+          setPaymentSettings(pSettings.data());
+        }
       } catch (e) { console.error(e); }
     };
 
@@ -380,6 +385,13 @@ const AdminDashboard = () => {
         setWaNumber(formatted); 
         alert('Settings saved!'); 
       } catch (e) { alert('Failed'); }
+    };
+
+    const savePaymentSettings = async () => {
+      try {
+        await setDoc(doc(db, 'settings', 'payment'), paymentSettings, { merge: true });
+        alert('Payment settings updated!');
+      } catch (e) { alert('Failed to save payment settings'); }
     };
 
     const saveTerms = async () => {
@@ -1693,7 +1705,7 @@ const AdminDashboard = () => {
                               ) : (
                                 /* Regular item: just qty × name, no price */
                                 <div key={i} className="flex items-center py-1.5 px-2 rounded-lg bg-white/3 border border-white/5">
-                                  <p className="text-sm text-white/70">{item.qty}× {item.name}</p>
+                                    <p className="text-sm text-white/70">{item.qty}× {item.name}</p>
                                 </div>
                               );
                             })}
@@ -1702,6 +1714,17 @@ const AdminDashboard = () => {
                             <p className="text-[10px] text-white/30">Original: ₹{o.original_price || o.total}</p>
                             <p className="text-sm font-bold text-accent">Final: ₹{o.final_price || o.total}</p>
                             {o.cancel_reason && <p className="text-[10px] text-red-400">Reason: {o.cancel_reason}</p>}
+                          </div>
+                          <div className="mt-3">
+                            <button onClick={() => sendFoodOrderWhatsApp({
+                              customerMobile: o.customer_mobile,
+                              customerName: o.customer_name,
+                              items: o.items || [],
+                              totalAmount: o.final_price || o.total
+                            })}
+                              className="flex items-center gap-2 text-[10px] bg-green-500/20 text-green-400 border border-green-500/30 px-3 py-1.5 rounded-lg font-black uppercase tracking-widest hover:bg-green-500/30 transition-all">
+                              <MessageCircle size={14} /> Send Bill via WhatsApp
+                            </button>
                           </div>
                         </div>
                         <div className="flex flex-col gap-2 items-end justify-center">
@@ -2468,6 +2491,41 @@ const AdminDashboard = () => {
                         placeholder="Enter terms and conditions..."
                       />
                       <button onClick={saveTerms} className="gold-button !px-6 !py-3 !text-[10px] font-black uppercase tracking-widest">Save Terms</button>
+                    </div>
+                  </div>
+
+                  <div className="pt-6 border-t border-white/10">
+                    <h3 className="text-sm uppercase tracking-widest font-black text-accent mb-4 flex items-center gap-2"><CreditCard size={14} />Payment Settings</h3>
+                    <p className="text-[10px] text-white/30 mb-6">Configure UPI and QR details for the payment page.</p>
+                    <div className="space-y-5">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[9px] uppercase tracking-widest text-white/40">UPI ID</label>
+                          <input type="text" value={paymentSettings.upi_id} onChange={e => setPaymentSettings({...paymentSettings, upi_id: e.target.value})} className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm" placeholder="example@upi" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[9px] uppercase tracking-widest text-white/40">Mobile Number</label>
+                          <input type="text" value={paymentSettings.mobile_number} onChange={e => setPaymentSettings({...paymentSettings, mobile_number: e.target.value})} className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm" placeholder="10-digit mobile" />
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[9px] uppercase tracking-widest text-white/40 font-black flex items-center justify-between">
+                          QR Code Image URL
+                          {paymentSettings.qr_image_url && <span className="text-green-400 font-normal lowercase tracking-normal">Active</span>}
+                        </label>
+                        <input type="text" value={paymentSettings.qr_image_url} onChange={e => setPaymentSettings({...paymentSettings, qr_image_url: e.target.value})} className="w-full bg-white/5 border border-white/10 p-3 rounded-xl outline-none focus:border-accent text-sm" placeholder="Paste image URL or hosted QR link" />
+                        
+                        {paymentSettings.qr_image_url && (
+                          <div className="mt-3 p-4 bg-white/5 border border-white/10 rounded-2xl flex items-center gap-4">
+                            <img src={paymentSettings.qr_image_url} alt="QR Preview" className="w-20 h-20 object-contain rounded-lg bg-white p-1" onError={e => e.target.src = logo43c} />
+                            <div>
+                              <p className="text-[9px] uppercase tracking-widest font-black text-white/40 mb-1">Preview</p>
+                              <p className="text-[10px] text-white/20 break-all max-w-[200px]">{paymentSettings.qr_image_url}</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <button onClick={savePaymentSettings} className="gold-button !px-6 !py-3 !text-[10px] font-black uppercase tracking-widest">Update Payment Config</button>
                     </div>
                   </div>
                 </div>
