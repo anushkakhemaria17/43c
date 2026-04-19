@@ -1,13 +1,14 @@
 // Firebase Storage removed for cost optimization. Images are now handled via local static assets.
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../lib/firebase';
-import { doc, updateDoc, deleteDoc, addDoc, collection, getDocs, query, where, serverTimestamp, setDoc, onSnapshot } from 'firebase/firestore';
-import { LayoutDashboard, Calendar, Users, Wallet, Plus, Clock, UtensilsCrossed, Coffee, CheckCircle2, Lock, X, Settings, Shield, BarChart2, MessageCircle, Bell, Phone, Trash2, Monitor, ImageIcon, ClipboardList, CheckSquare, Menu, Ticket, CreditCard, Crown, Map, BookOpen, Zap, ShieldCheck } from 'lucide-react';
+import { doc, updateDoc, deleteDoc, addDoc, collection, getDocs, query, where, serverTimestamp, setDoc, onSnapshot, getDoc, limit } from 'firebase/firestore';
+import { LayoutDashboard, Calendar, Users, Wallet, Plus, Clock, UtensilsCrossed, Coffee, CheckCircle2, Lock, X, Settings, Shield, BarChart2, MessageCircle, Bell, Phone, Trash2, Monitor, ImageIcon, ClipboardList, CheckSquare, Menu, Ticket, CreditCard, Crown, Map, BookOpen, Zap, ShieldCheck, Database } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SLOT_HOURS, getSlotLabel, getAvailableDates, getSlotStatusMap, formatSlotsDisplay, getTodayStr } from '../utils/slots';
 import { exportAnalyticsExcel } from '../utils/exportExcel';
 import { createNotification, autoCompleteBookings, autoCancelPendingBookings, openAdminWhatsApp, sendBookingConfirmedWhatsApp, sendFoodOrderWhatsApp } from '../utils/firebaseHelpers';
 import { openWhatsApp } from '../utils/whatsapp';
+import { sendToGoogleSheet, runAutoCleanup } from '../utils/backup';
 import AdminNotificationBell from '../components/AdminNotificationBell';
 import logo43c from '../assets/43C.png';
 
@@ -90,6 +91,7 @@ const AdminDashboard = () => {
   const [view, setView] = useState('overview');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [backupLoading, setBackupLoading] = useState(false);
   const [analytics, setAnalytics] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -408,6 +410,59 @@ const AdminDashboard = () => {
       try { await setDoc(doc(db, 'pricing', 'rates'), { screens: pricingMap }); alert('Pricing updated.'); } catch (e) { alert('Failed to save pricing.'); }
     };
 
+    useEffect(() => {
+      // Auto-cleanup: Delete cancelled bookings older than 10 days
+      if (bookings.length > 0) {
+        runAutoCleanup(bookings, async (id) => {
+          const b = bookings.find(x => x.id === id);
+          if (b) {
+            await sendToGoogleSheet({
+              type: "deleted",
+              reason: "Auto-cleanup (old cancelled)",
+              data: JSON.stringify(b)
+            });
+          }
+          await deleteDoc(doc(db, 'bookings', id));
+          setBookings(prev => prev.filter(b => b.id !== id));
+        });
+      }
+    }, [bookings.length]);
+
+    const handleManualBackup = async () => {
+      setBackupLoading(true);
+      try {
+        // Sync recent confirmed bookings
+        const recentB = bookings.filter(b => b.status === 'confirmed' || b.status === 'completed');
+        for (const b of recentB) {
+          await sendToGoogleSheet({
+            type: "booking",
+            name: b.customer_name,
+            mobile: b.customer_mobile,
+            details: `Slot booking sync (${b.screen})`,
+            amount: b.final_price || b.price || 0,
+            status: b.status
+          });
+        }
+        // Sync confirmed food orders
+        const recentFO = foodOrders.filter(o => o.status === 'confirmed' || o.status === 'served');
+        for (const o of recentFO) {
+          await sendToGoogleSheet({
+            type: "food",
+            name: o.customer_name,
+            mobile: o.customer_mobile,
+            details: "Food order sync",
+            amount: o.final_price || o.total || 0,
+            status: o.status
+          });
+        }
+        alert('Selective sync completed! Confirmed records sent to Google Sheets.');
+      } catch (err) {
+        alert('Sync failed: ' + err.message);
+      } finally {
+        setBackupLoading(false);
+      }
+    };
+
     const fetchAnalytics = async () => {
       try {
         const today = getTodayStr();
@@ -507,8 +562,6 @@ const AdminDashboard = () => {
         });
         setBookings(raw);
         setLoading(false);
-        // We still run these once to handle auto-actions, but maybe not on every snapshot for performance?
-        // Actually, onSnapshot is fine because it only triggers when data changes.
         await autoCompleteBookings(raw, (id, status) =>
           setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b))
         );
@@ -959,6 +1012,16 @@ const AdminDashboard = () => {
           openWhatsApp(cleanPhone, waMsg);
         }
 
+        // Google Sheets Backup
+        sendToGoogleSheet({
+          type: "membership",
+          name: membership.customer_name,
+          mobile: membership.customer_mobile,
+          details: `Membership Approved: ${membership.plan_name}`,
+          amount: Number(memApproveAmount),
+          status: "active"
+        });
+
         alert('Membership approved and earnings logged. WhatsApp message opened.');
         setShowMemApproveModal(false);
         fetchActiveMemberships();
@@ -1001,6 +1064,14 @@ const AdminDashboard = () => {
     const deleteBooking = async (id) => {
       if (!window.confirm('PERMANENTLY DELETE this booking? This cannot be undone.')) return;
       try {
+        const b = bookings.find(x => x.id === id);
+        if (b) {
+          await sendToGoogleSheet({
+            type: "deleted",
+            reason: "Manual admin delete",
+            data: JSON.stringify(b)
+          });
+        }
         await deleteDoc(doc(db, 'bookings', id));
         setBookings(prev => prev.filter(b => b.id !== id));
         alert('Booking deleted permanently.');
@@ -1072,6 +1143,16 @@ const AdminDashboard = () => {
             advancePaid: b.advance_paid || 0,
             comboName: b.combo_applied?.name
           });
+
+          // 3. Google Sheets Backup
+          sendToGoogleSheet({
+            type: "booking",
+            name: b.customer_name,
+            mobile: b.customer_mobile,
+            details: `Slot booking confirmed (${b.screen})`,
+            amount: b.final_price || b.price || 0,
+            status: "confirmed"
+          });
         }
       } catch (err) {
         console.error('Status update error:', err);
@@ -1106,6 +1187,18 @@ const AdminDashboard = () => {
             message: msg, 
             orderId: id 
           });
+
+          // Google Sheets Backup on Confirmation
+          if (status === 'confirmed') {
+            sendToGoogleSheet({
+              type: "food",
+              name: o.customer_name,
+              mobile: o.customer_mobile,
+              details: "Food order confirmed",
+              amount: o.final_price || o.total || 0,
+              status: "confirmed"
+            });
+          }
         }
       } catch (err) {
         console.error('Order status update error:', err);
@@ -1156,6 +1249,16 @@ const AdminDashboard = () => {
           date: bookingForm.date,
           guests: bookingForm.guest_count,
           totalAmount: totalPrice
+        });
+
+        // Google Sheets Backup
+        sendToGoogleSheet({
+          type: "booking",
+          name: bookingForm.name,
+          mobile: bookingForm.mobile,
+          details: `Manual booking (${bookingForm.screen})`,
+          amount: totalPrice,
+          status: "confirmed"
         });
 
         alert('Booking created and confirmed.'); setShowBookingModal(false); setBookingForm({ name: '', mobile: '', screen: 'Screen 1', slots: [], guest_count: 2, date: getTodayStr() });
@@ -1225,7 +1328,22 @@ const AdminDashboard = () => {
 
     const logExpense = async (e) => {
       e.preventDefault();
-      try { await addDoc(collection(db, 'expenses'), { ...expenseForm, amount: Number(expenseForm.amount), created_at: serverTimestamp() }); setShowExpenseModal(false); setExpenseForm({ title: '', amount: '', date: getTodayStr() }); fetchExpenses(); } catch (e) { alert('Failed'); }
+      try { 
+        const docRef = await addDoc(collection(db, 'expenses'), { ...expenseForm, amount: Number(expenseForm.amount), created_at: serverTimestamp() }); 
+        
+        // Google Sheets Backup
+        sendToGoogleSheet({
+          type: "expense",
+          name: "admin",
+          details: `Expense: ${expenseForm.title}`,
+          amount: Number(expenseForm.amount),
+          status: "added"
+        });
+
+        setShowExpenseModal(false); 
+        setExpenseForm({ title: '', amount: '', date: getTodayStr() }); 
+        fetchExpenses(); 
+      } catch (e) { alert('Failed'); }
     };
 
     const saveAdmin = async (e) => {
@@ -1249,11 +1367,28 @@ const AdminDashboard = () => {
           if (b?.status === 'completed') return alert('Cannot cancel a completed booking.');
           await updateDoc(doc(db, 'bookings', id), { status: 'cancelled', cancel_reason: cancelReason });
           setBookings(prev => prev.map(x => x.id === id ? { ...x, status: 'cancelled', cancel_reason: cancelReason } : x));
+          
+          // Google Sheets Archive
+          sendToGoogleSheet({
+            type: "deleted",
+            reason: `Cancelled: ${cancelReason}`,
+            data: JSON.stringify(b)
+          });
+
           await createNotification({ userId: b.customer_id, type: 'booking_cancelled', message: `Your booking on ${b.booking_date} has been cancelled. Reason: ${cancelReason}`, bookingId: id });
         } else if (type === 'order') {
           const o = foodOrders.find(x => x.id === id);
           await updateDoc(doc(db, 'food_orders', id), { status: 'cancelled', cancel_reason: cancelReason });
           setFoodOrders(prev => prev.map(x => x.id === id ? { ...x, status: 'cancelled', cancel_reason: cancelReason } : x));
+          
+          // Google Sheets Archive
+          if (o) {
+            sendToGoogleSheet({
+              type: "deleted",
+              reason: `Order Cancelled: ${cancelReason}`,
+              data: JSON.stringify(o)
+            });
+          }
           if (o) await createNotification({ userId: o.customer_id, type: 'order_cancelled', message: `Your food order #${id.slice(0, 6)} has been cancelled. Reason: ${cancelReason}`, orderId: id });
         } else if (type === 'membership') {
           const m = membershipRequests.find(x => x.id === id);
@@ -1300,6 +1435,16 @@ const AdminDashboard = () => {
           totalAmount: total,
           advancePaid: adv,
           comboName: advanceTarget.combo_applied?.name
+        });
+
+        // Google Sheets Backup
+        sendToGoogleSheet({
+          type: "booking",
+          name: advanceTarget.customer_name,
+          mobile: advanceTarget.customer_mobile,
+          details: `Slot booking confirmed (${advanceTarget.screen})`,
+          amount: total,
+          status: "confirmed"
         });
       } catch (e) { alert('Failed: ' + e.message); }
       setShowAdvanceModal(false);
@@ -2526,6 +2671,29 @@ const AdminDashboard = () => {
                         )}
                       </div>
                       <button onClick={savePaymentSettings} className="gold-button !px-6 !py-3 !text-[10px] font-black uppercase tracking-widest">Update Payment Config</button>
+                    </div>
+                  </div>
+
+                  <div className="pt-6 border-t border-red-500/20">
+                    <h3 className="text-sm uppercase tracking-widest font-black text-red-400 mb-4 flex items-center gap-2"><Database size={14} />Sync & Maintenance</h3>
+                    <div className="navy-card !bg-red-500/5 border-red-500/10 p-6 space-y-4">
+                      <div>
+                        <p className="text-white font-bold text-xs mb-1">Backup to Google Sheets</p>
+                        <p className="text-[10px] text-white/40 leading-relaxed">Manually push confirmed bookings and food orders to your Google Sheets daily report. This is recommended at the end of every business day.</p>
+                      </div>
+                      <button 
+                        onClick={handleManualBackup} 
+                        disabled={backupLoading}
+                        className={`w-full py-4 rounded-xl flex items-center justify-center gap-3 text-[10px] font-black uppercase tracking-[0.2em] transition-all
+                          ${backupLoading ? 'bg-white/10 text-white/20' : 'bg-white/5 border border-white/10 text-white hover:bg-white/10 hover:border-accent group'}`}
+                      >
+                        {backupLoading ? (
+                          <RefreshCcw size={16} className="animate-spin" />
+                        ) : (
+                          <RefreshCcw size={16} className="group-hover:rotate-180 transition-transform duration-700" />
+                        )}
+                        {backupLoading ? 'Syncing...' : 'Sync Data to Sheets'}
+                      </button>
                     </div>
                   </div>
                 </div>

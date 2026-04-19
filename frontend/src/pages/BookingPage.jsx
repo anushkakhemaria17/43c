@@ -508,7 +508,7 @@ Please let me know how I can confirm this booking. Thanks!`;
               {authMode === 'mobile' && (
                 <form onSubmit={handleMobileSubmit} className="space-y-8">
                   <div className="text-center space-y-2">
-                    <h2 className="text-3xl font-heading gold-text-gradient font-black">Welcome Back</h2>
+                    <h2 className="text-3xl font-heading gold-text-gradient font-black">Welcome</h2>
                     <p className="text-[10px] uppercase tracking-widest text-white/40">Enter your number to continue</p>
                   </div>
                   <div className="space-y-2">
