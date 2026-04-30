@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../lib/firebase';
 import { doc, updateDoc, deleteDoc, addDoc, collection, getDocs, query, where, serverTimestamp, setDoc, onSnapshot, getDoc, limit } from 'firebase/firestore';
-import { LayoutDashboard, Calendar, Users, Wallet, Plus, Clock, UtensilsCrossed, Coffee, CheckCircle2, Lock, X, Settings, Shield, BarChart2, MessageCircle, Bell, Phone, Trash2, Monitor, ImageIcon, ClipboardList, CheckSquare, Menu, Ticket, CreditCard, Crown, Map, BookOpen, Zap, ShieldCheck, Database } from 'lucide-react';
+import { LayoutDashboard, Calendar, Users, Wallet, Plus, Clock, UtensilsCrossed, Coffee, CheckCircle2, Lock, X, Settings, Shield, BarChart2, MessageCircle, Bell, Phone, Trash2, Monitor, ImageIcon, ClipboardList, CheckSquare, Menu, Ticket, CreditCard, Crown, Map, BookOpen, Zap, ShieldCheck, Database, RefreshCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SLOT_HOURS, getSlotLabel, getAvailableDates, getSlotStatusMap, formatSlotsDisplay, getTodayStr } from '../utils/slots';
 import { exportAnalyticsExcel } from '../utils/exportExcel';
