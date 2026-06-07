@@ -59,7 +59,7 @@ const PaymentPage = () => {
   };
 
   const openWhatsApp = () => {
-    const waNumber = '919479810400';
+    const waNumber = '916264804828';
     const message = encodeURIComponent(`Hello, I have completed the payment of ₹${amount || '___'} for my ${type}. Here is the screenshot.`);
     window.open(`https://wa.me/${waNumber}?text=${message}`, '_blank');
   };
